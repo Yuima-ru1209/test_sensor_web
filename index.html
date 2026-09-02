@@ -66,14 +66,14 @@ details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-cont
 </div>
 </section>
 
-<section id="qrRegisterPanel" class="panel qr-card hidden">
-  <h2>センサーQR登録</h2>
-  <p id="qrRegisterTitle">センサー情報を読み込みました。</p>
+<section id="loggerQrPanel" class="panel qr-card hidden">
+  <h2>ロガーQR接続</h2>
+  <p id="loggerQrTitle">ロガー情報を読み込みました。</p>
   <div class="qr-meta">
-    <span id="qrModuleType" class="qr-tag"></span>
-    <span id="qrModuleId" class="qr-tag"></span>
+    <span id="loggerQrId" class="qr-tag"></span>
+    <span id="loggerQrBle" class="qr-tag"></span>
   </div>
-  <div id="qrRegisterStatus" class="notice" style="margin-top:12px">「ロガーに接続」を押してください。</div>
+  <div id="loggerQrStatus" class="notice" style="margin-top:12px">「このロガーに接続」を押してください。</div>
 </section>
 
 <section class="panel">
@@ -188,24 +188,18 @@ let restartReloadTimer=null;
 let lastSavedLocationKey="";
 let pendingLocationKey="";
 
-const QR_MODULES={
-  bh1750:{label:"BH1750 照度センサー",types:["BH1750_TEST","LIGHT_POWER_TEST"]},
-  ina219:{label:"INA219 電流・電圧センサー",types:["INA219_TEST","LIGHT_POWER_TEST"]},
-  sht40:{label:"SHT40 温湿度センサー",types:["SHT40_TEST","SHT40_PROBE","ENV_PROBE"]},
-  bmp280:{label:"BMP280 気圧センサー",types:["BMP280_TEST","ENV_PROBE"]}
-};
-
-function readQrRegistration(){
+function readLoggerQr(){
   const p=new URLSearchParams(location.search);
-  if((p.get("mode")||"").toLowerCase()!=="register")return null;
-  const module=(p.get("module")||"").trim().toLowerCase();
-  const moduleId=(p.get("module_id")||"").trim();
-  const port=Number(p.get("port")||0);
-  if(!QR_MODULES[module]||!moduleId||!/^[A-Za-z0-9_.-]{1,40}$/.test(moduleId))return null;
-  return {module,moduleId,port:port>=1&&port<=8?port:0,...QR_MODULES[module]};
+  const loggerId=(p.get("logger_id")||"").trim();
+  if(!/^PV-LOGGER-[A-Za-z0-9_.-]{1,20}$/.test(loggerId))return null;
+  const suffix=loggerId.slice("PV-LOGGER-".length);
+  const requestedBle=(p.get("ble_name")||"").trim();
+  const bleName=requestedBle||`PlantVital-${suffix}`;
+  if(!/^PlantVital-[A-Za-z0-9_.-]{1,20}$/.test(bleName))return null;
+  return {loggerId,bleName};
 }
 
-const qrRegistration=readQrRegistration();
+const loggerQr=readLoggerQr();
 
 const state={
   connected:false,
@@ -228,6 +222,7 @@ const state={
   restartInProgress:false,
   expectedRestartDisconnect:false,
   expectedRuntimeDisconnect:false,
+  qrLoggerVerified:false,
   initialSend:"",
   nextMeasure:"",
   nextSend:""
@@ -350,34 +345,26 @@ function updateWorkflow(){
   $("connectBtn").disabled=state.loggerRunning;
   $("restartBtn").disabled=!state.connected||state.loggerRunning||state.restartInProgress;
   $("restartBtn").textContent=state.restartInProgress?"再起動中…":"ロガーを再起動";
-  updateQrRegistration();
+  updateLoggerQr();
 }
 
-function updateQrRegistration(){
-  if(!qrRegistration)return;
-  const panel=$("qrRegisterPanel");
+function updateLoggerQr(){
+  if(!loggerQr)return;
+  const panel=$("loggerQrPanel");
   panel.classList.remove("hidden");
-  $("qrModuleType").textContent=qrRegistration.label;
-  $("qrModuleId").textContent=`管理ID: ${qrRegistration.moduleId}`;
-  $("qrRegisterTitle").textContent=`「${qrRegistration.moduleId}」をロガーで確認します。`;
-  const status=$("qrRegisterStatus");
-  const expected=qrRegistration.types;
-  const matches=state.sensorPorts.filter(item=>item&&expected.includes(item.type)&&(!qrRegistration.port||item.port===qrRegistration.port));
+  $("loggerQrId").textContent=`ロガーID: ${loggerQr.loggerId}`;
+  $("loggerQrBle").textContent=`Bluetooth: ${loggerQr.bleName}`;
+  $("loggerQrTitle").textContent=`QRに対応する「${loggerQr.loggerId}」だけを検索します。`;
+  const status=$("loggerQrStatus");
   if(!state.connected){
     status.className="notice";
-    status.textContent="下の「ロガーに接続」を押し、PlantVital-Loggerを選択してください。";
-  }else if(!state.bootDone){
+    status.textContent="「このロガーに接続」を押してください。初回のみブラウザのBluetooth確認画面が表示されます。";
+  }else if(!state.qrLoggerVerified){
     status.className="notice";
-    status.textContent="接続しました。センサーを自動点検しています…";
-  }else if(matches.length===1){
-    status.className="notice ok";
-    status.textContent=`ポート${matches[0].port}の${matches[0].name}を確認しました。QRの管理IDは ${qrRegistration.moduleId} です。`;
-  }else if(matches.length>1){
-    status.className="notice warn";
-    status.textContent=`同じ種類のセンサーがポート${matches.map(x=>x.port).join("・")}にあります。仮登録では個体を特定できないため、対象だけを接続して再点検してください。`;
+    status.textContent="接続先のロガーIDを確認しています…";
   }else{
-    status.className="notice warn";
-    status.textContent=`${qrRegistration.label}が見つかりません。配線と電源を確認して再接続してください。`;
+    status.className="notice ok";
+    status.textContent=`${loggerQr.loggerId}への接続を確認しました。続けて初期設定できます。`;
   }
 }
 
@@ -394,7 +381,7 @@ function setConnected(v){
     $("connBadge").textContent=v?"接続済み":"未接続";
     $("connBadge").className="badge"+(v?" ok":"");
   }
-  $("connectBtn").textContent=v?"再接続":"ロガーに接続";
+  $("connectBtn").textContent=v?"再接続":(loggerQr?"このロガーに接続":"ロガーに接続");
   updateWorkflow();
 }
 
@@ -440,8 +427,8 @@ async function processCommandQueue(){
       for(let i=0;i<data.length;i+=16){
         await rxChar.writeValue(data.slice(i,Math.min(i+16,data.length)));
       }
-      await ack;
-      item.resolve();
+      const response=await ack;
+      item.resolve(response);
     }catch(e){
       log("送信エラー: "+e.message);
       item.reject(e);
@@ -734,7 +721,8 @@ async function connectGattWithRetry(dev){
 
 $("connectBtn").onclick=async()=>{
   try{
-    device=await navigator.bluetooth.requestDevice({filters:[{namePrefix:"PlantVital-Logger"}],optionalServices:[SERVICE]});
+    const filters=loggerQr?[{name:loggerQr.bleName}]:[{namePrefix:"PlantVital-"}];
+    device=await navigator.bluetooth.requestDevice({filters,optionalServices:[SERVICE]});
     device.addEventListener("gattserverdisconnected",()=>{
       rxChar=null;
       cancelCommandQueue("Bluetoothが切断されました");
@@ -764,13 +752,24 @@ $("connectBtn").onclick=async()=>{
     state.hardwareReady=false;
     state.timeSynced=false;
     state.browserSyncRequired=false;
+    state.qrLoggerVerified=false;
     state.sensorDevices=[];
     state.sensorPorts=Array(8).fill(null);
     pendingClockStatus=null;
     pendingModalShown=false;
     setConnected(true);
     log("接続: "+device.name);
-    await enqueueCommand("HELLO",10000);
+    const helloLine=await enqueueCommand("HELLO",10000);
+    if(loggerQr){
+      const hello=parseLine(helloLine||"");
+      if(hello.type!=="HELLO"||hello.d.device_id!==loggerQr.loggerId){
+        const actual=hello.d.device_id||"不明";
+        if(device&&device.gatt.connected)device.gatt.disconnect();
+        throw new Error(`QRのロガーIDと一致しません（接続先: ${actual}）`);
+      }
+      state.qrLoggerVerified=true;
+      updateWorkflow();
+    }
     state.bootInProgress=true;
     updateWorkflow();
     await enqueueCommand("BOOTCHECK",180000);
@@ -780,10 +779,10 @@ $("connectBtn").onclick=async()=>{
   }
 };
 
-if(qrRegistration){
-  $("qrRegisterPanel").classList.remove("hidden");
-  $("connectBtn").textContent=`${qrRegistration.moduleId}をロガーに接続`;
-  updateQrRegistration();
+if(loggerQr){
+  $("loggerQrPanel").classList.remove("hidden");
+  $("connectBtn").textContent="このロガーに接続";
+  updateLoggerQr();
 }
 
 $("restartBtn").onclick=async()=>{
