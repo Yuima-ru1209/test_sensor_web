@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>植物バイタルロガー 初期設定・計測開始</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+<style>
+:root{
+  --bg:#f4f7f3;--card:#fff;--ink:#173022;--sub:#6b7b70;--line:#dbe4dc;
+  --green:#28764b;--green2:#e7f3eb;--amber:#a56a00;--amber2:#fff4d9;
+  --red:#b13b35;--red2:#fdebea;--blue:#28658a;--shadow:0 10px 28px rgba(28,55,38,.07)
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI","Yu Gothic UI","Hiragino Kaku Gothic ProN",sans-serif}
+button,input{font:inherit}
+main{width:min(1060px,calc(100% - 24px));margin:18px auto 48px;display:grid;gap:14px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow)}
+header{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+h1{font-size:clamp(24px,4vw,36px);margin:0}h2{font-size:20px;margin:0 0 14px}h3{font-size:15px;margin:0 0 6px}
+p{color:var(--sub);line-height:1.6;margin:7px 0}
+.badge{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:9px 14px;background:#eef1ef;color:#536159;font-weight:700}
+.badge::before{content:"";width:9px;height:9px;border-radius:50%;background:#929c96}.badge.ok{background:var(--green2);color:var(--green)}.badge.ok::before{background:var(--green)}
+.primary,.secondary,.soft,.danger{border:0;border-radius:12px;padding:12px 16px;min-height:46px;font-weight:750;cursor:pointer}
+.primary{background:var(--green);color:#fff}.secondary{background:#eef2ef;color:var(--ink)}.soft{background:var(--green2);color:var(--green)}.danger{background:var(--red2);color:var(--red)}
+button:disabled{opacity:.42;cursor:not-allowed}
+.connect-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:16px}
+.step{border-radius:12px;border:1px solid var(--line);padding:10px;font-size:13px;text-align:center;color:var(--sub);background:#fafcfb}.step.done{background:var(--green2);border-color:#bedcc9;color:var(--green);font-weight:700}.step.active{border-color:#8fbba1;color:var(--green);font-weight:700}.step.warn{background:var(--amber2);border-color:#ead291;color:var(--amber)}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.status-card{border:1px solid var(--line);border-radius:15px;padding:15px;min-height:120px}.status-card .label{font-size:13px;color:var(--sub)}.status-card .value{font-size:21px;font-weight:800;margin:8px 0 3px}.status-card .detail{font-size:12px;color:var(--sub);line-height:1.45}.state-ok{color:var(--green)}.state-warn{color:var(--amber)}.state-ng{color:var(--red)}
+.notice{padding:14px;border-radius:13px;background:#f4f7f5;border:1px solid var(--line);line-height:1.55}.notice.warn{background:var(--amber2);border-color:#e9cf86;color:#72500d}.notice.ok{background:var(--green2);border-color:#bfddc9;color:#285b3d}
+.qr-card{border:2px solid #9bc7aa;background:linear-gradient(135deg,#f3fbf5,#fff)}.qr-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.qr-tag{display:inline-flex;padding:6px 10px;border-radius:999px;background:var(--green2);color:var(--green);font-size:13px;font-weight:750}
+.preset-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.preset{border:2px solid var(--line);border-radius:14px;padding:14px;background:#fff;cursor:pointer;text-align:left}.preset.selected{border-color:var(--green);background:var(--green2)}.preset strong{display:block}.preset small{color:var(--sub)}
+.clock-row,.location-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+#map{height:330px;border-radius:14px;border:1px solid var(--line);background:#edf1ee;margin:12px 0}
+.location-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px}.field label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px}.field input{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.nudge{display:grid;grid-template-columns:repeat(4,46px);gap:6px}.nudge button{border:1px solid var(--line);background:#fff;border-radius:10px;min-height:42px;cursor:pointer}
+.start-panel{text-align:center;padding:26px}.start-panel .primary{font-size:18px;min-width:250px;min-height:56px}.requirements{margin:15px auto 0;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}.req{font-size:12px;padding:6px 10px;border-radius:999px;background:#edf0ee;color:#69736d}.req.ok{background:var(--green2);color:var(--green)}
+details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-content:flex-end;gap:8px;margin:10px 0}.logbar button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 10px;cursor:pointer}pre{background:#102019;color:#dceee2;border-radius:12px;padding:14px;max-height:420px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.55 Consolas,monospace}
+.modal{position:fixed;inset:0;background:rgba(10,25,16,.45);display:none;align-items:center;justify-content:center;padding:18px;z-index:9999}.modal.show{display:flex}.modal-card{width:min(480px,100%);background:#fff;border-radius:18px;padding:22px;box-shadow:0 28px 70px rgba(0,0,0,.22)}.modal-card h2{margin-bottom:8px}.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}
+.hidden{display:none!important}
+@media(max-width:800px){.grid{grid-template-columns:1fr 1fr}.preset-grid{grid-template-columns:1fr 1fr}.steps{grid-template-columns:1fr 1fr 1fr}.location-fields{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.grid,.preset-grid,.location-fields{grid-template-columns:1fr}.steps{grid-template-columns:1fr 1fr}.panel{padding:16px}#map{height:280px}.start-panel .primary{min-width:0;width:100%}}
+</style>
+</head>
+<body>
+<main>
+<section class="panel">
+<header>
+  <div>
+    <h1>植物バイタルロガー 初期設定</h1>
+    <p>ロガーに接続すると自動点検を行い、設定完了後にテスト送信して計測を開始します。</p>
+  </div>
+  <div class="connect-row">
+    <span id="connBadge" class="badge">未接続</span>
+    <button id="connectBtn" class="primary">ロガーに接続</button>
+    <button id="restartBtn" class="secondary" disabled>ロガーを再起動</button>
+  </div>
+</header>
+<div class="steps">
+  <div id="step1" class="step active">1. 接続・点検</div>
+  <div id="step2" class="step">2. 時刻</div>
+  <div id="step3" class="step">3. 計測設定</div>
+  <div id="step4" class="step">4. 設置位置</div>
+  <div id="step5" class="step">5. 計測開始</div>
+</div>
+</section>
+
+<section id="loggerQrPanel" class="panel qr-card hidden">
+  <h2>ロガーQR接続</h2>
+  <p id="loggerQrTitle">ロガー情報を読み込みました。</p>
+  <div class="qr-meta">
+    <span id="loggerQrId" class="qr-tag"></span>
+    <span id="loggerQrBle" class="qr-tag"></span>
+  </div>
+  <div id="loggerQrStatus" class="notice" style="margin-top:12px">「このロガーに接続」を押してください。</div>
+</section>
+
+<section class="panel">
+<h2>ロガーの状態</h2>
+<div id="autoCheckNote" class="notice">接続後、自動点検を開始します。</div>
+<div class="grid" style="margin-top:12px">
+  <div class="status-card"><div class="label">電池</div><div id="batteryValue" class="value">--</div><div id="batteryDetail" class="detail">未確認</div></div>
+  <div class="status-card"><div class="label">センサー</div><div id="sensorValue" class="value">--</div><div id="sensorDetail" class="detail">未確認</div></div>
+  <div class="status-card"><div class="label">LTE通信</div><div id="lteValue" class="value">--</div><div id="lteDetail" class="detail">LTE圏外でも計測できます</div></div>
+  <div class="status-card"><div class="label">内部データ</div><div id="storageValue" class="value">--</div><div id="storageDetail" class="detail">FeRAM未確認</div></div>
+  <div class="status-card"><div class="label">時計</div><div id="clockValue" class="value">--</div><div id="clockDetail" class="detail">ネットワーク時刻を優先します</div></div>
+  <div class="status-card"><div class="label">ロガー</div><div id="loggerValue" class="value">設定中</div><div id="loggerDetail" class="detail">初期設定を完了してください</div></div>
+  <div class="status-card"><div class="label">次回動作</div><div id="scheduleValue" class="value">--</div><div id="scheduleDetail" class="detail">計測開始後に表示します</div></div>
+</div>
+</section>
+
+<section id="clockPanel" class="panel">
+<h2>時刻設定</h2>
+<div id="clockNotice" class="notice">自動点検でLTEネットワーク時刻を取得できた場合は自動同期します。</div>
+<div class="clock-row" style="margin-top:12px">
+  <button id="syncBrowserBtn" class="secondary" disabled>この端末の時刻で同期</button>
+  <button id="readClockBtn" class="secondary" disabled>現在のRTCを確認</button>
+</div>
+</section>
+
+<section class="panel">
+<h2>計測設定</h2>
+<p>用途に合わせて送信頻度を選択してください。計測はすべて10分間隔です。</p>
+<div class="preset-grid">
+  <button class="preset" data-preset="1" data-measure="600" data-send="3600"><strong>標準</strong><small>計測 10分 / 送信 1時間</small></button>
+  <button class="preset" data-preset="2" data-measure="600" data-send="21600"><strong>省通信</strong><small>計測 10分 / 送信 6時間</small></button>
+  <button class="preset" data-preset="3" data-measure="600" data-send="43200"><strong>1日2回送信</strong><small>計測 10分 / 送信 12時間</small></button>
+  <button class="preset" data-preset="4" data-measure="600" data-send="86400"><strong>1日1回送信</strong><small>計測 10分 / 送信 24時間</small></button>
+</div>
+<div id="presetNotice" class="notice" style="margin-top:12px">プリセットを1つ選択してください。</div>
+</section>
+
+<section class="panel">
+<h2>設置位置</h2>
+<p>スマホやPCの現在位置を取得し、必要に応じてピンを動かして補正してください。</p>
+<div class="location-actions">
+  <button id="getLocationBtn" class="primary" disabled>現在位置を取得</button>
+  <button id="saveLocationBtn" class="secondary" disabled>この位置を登録</button>
+  <span id="locationState" class="badge">未登録</span>
+</div>
+<div id="map"></div>
+<div class="location-fields">
+  <div class="field"><label>緯度</label><input id="latInput" type="number" step="0.000001" placeholder="34.000000"></div>
+  <div class="field"><label>経度</label><input id="lonInput" type="number" step="0.000001" placeholder="136.000000"></div>
+  <div class="field"><label>取得精度（m）</label><input id="accInput" type="number" step="0.1" value="0"></div>
+</div>
+<div class="location-actions" style="margin-top:10px">
+  <span style="font-size:12px;color:var(--sub)">微調整</span>
+  <div class="nudge">
+    <button data-dlat="0.00002" data-dlon="0">↑</button>
+    <button data-dlat="-0.00002" data-dlon="0">↓</button>
+    <button data-dlat="0" data-dlon="-0.00002">←</button>
+    <button data-dlat="0" data-dlon="0.00002">→</button>
+  </div>
+</div>
+</section>
+
+<section class="panel start-panel">
+<h2>計測開始</h2>
+<p id="startMessage">必要な設定が完了すると、テスト送信後に定刻計測を開始できます。</p>
+<button id="startBtn" class="primary" disabled>計測を開始</button>
+<div class="requirements">
+  <span id="reqHw" class="req">自動点検</span>
+  <span id="reqClock" class="req">時刻</span>
+  <span id="reqPreset" class="req">計測設定</span>
+  <span id="reqLocation" class="req">設置位置</span>
+</div>
+</section>
+
+<section class="panel">
+<details>
+<summary>技術情報・ログ</summary>
+<div class="logbar"><button id="copyLogBtn">コピー</button><button id="clearLogBtn">消去</button></div>
+<pre id="log"></pre>
+</details>
+</section>
+</main>
+
+<div id="pendingModal" class="modal">
+  <div class="modal-card">
+    <h2>未送信データがあります</h2>
+    <p><strong id="pendingCountText">0件</strong>のデータがロガー内に残っています。通信できる場合は、計測開始前に送信することをおすすめします。</p>
+    <div class="modal-actions">
+      <button id="pendingLaterBtn" class="secondary">あとで</button>
+      <button id="pendingSendBtn" class="primary">今すぐ送信</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+const SERVICE="6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const RX="6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+const TX="6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+const $=id=>document.getElementById(id);
+
+let rxChar=null;
+let device=null;
+let lineBuffer="";
+let map=null, marker=null;
+let pendingModalShown=false;
+let commandQueue=[];
+let commandWorkerRunning=false;
+let activeCommand=null;
+let pendingClockStatus=null;
+let restartReloadTimer=null;
+let lastSavedLocationKey="";
+let pendingLocationKey="";
+
+function readLoggerQr(){
+  const p=new URLSearchParams(location.search);
+  const loggerId=(p.get("logger_id")||"").trim();
+  if(!/^PV-LOGGER-[A-Za-z0-9_.-]{1,20}$/.test(loggerId))return null;
+  const suffix=loggerId.slice("PV-LOGGER-".length);
+  const requestedBle=(p.get("ble_name")||"").trim();
+  const bleName=requestedBle||`PlantVital-${suffix}`;
+  if(!/^PlantVital-[A-Za-z0-9_.-]{1,20}$/.test(bleName))return null;
+  return {loggerId,bleName};
+}
+
+const loggerQr=readLoggerQr();
+
+const state={
+  connected:false,
+  bootInProgress:false,
+  bootDone:false,
+  hardwareReady:false,
+  batteryOk:false,
+  storageOk:false,
+  muxOk:false,
+  sensorDevices:[],
+  sensorPorts:Array(8).fill(null),
+  timeSynced:false,
+  browserSyncRequired:false,
+  presetSaved:false,
+  locationSaved:false,
+  locationSaving:false,
+  pending:0,
+  loggerRunning:false,
+  startInProgress:false,
+  restartInProgress:false,
+  expectedRestartDisconnect:false,
+  expectedRuntimeDisconnect:false,
+  qrLoggerVerified:false,
+  initialSend:"",
+  nextMeasure:"",
+  nextSend:""
+};
+
+function log(text){
+  $("log").textContent+=`[${new Date().toLocaleTimeString()}] ${text}\n`;
+  $("log").scrollTop=$("log").scrollHeight;
+}
+
+function parseLine(line){
+  const parts=line.split("|");
+  const type=parts.shift();
+  const d={};
+  for(const p of parts){
+    const i=p.indexOf("=");
+    if(i>=0)d[p.slice(0,i)]=p.slice(i+1);
+  }
+  return {type,d};
+}
+
+function setCard(valueId,detailId,text,detail,kind=""){
+  const el=$(valueId);
+  el.textContent=text;
+  el.className="value"+(kind?` state-${kind}`:"");
+  $(detailId).textContent=detail;
+}
+
+function setCheckStep(name,stateText){
+  // The top workflow has broader steps. The live note shows current auto-check.
+  const human={HARDWARE:"基板",BATTERY:"電池",STORAGE:"内部メモリ",RTC:"時計",SENSORS:"センサー",LTE:"LTE",CLOCK:"時刻"}[name]||name;
+  if(stateText==="RUNNING"){
+    $("autoCheckNote").className="notice";
+    $("autoCheckNote").textContent=`自動点検中：${human}を確認しています…`;
+  }
+}
+
+function approxBatteryPercent(v){
+  // Temporary voltage-based estimate for 2 x ER34615 in series.
+  // Li-SOCl2 has a flat discharge curve; this is intentionally displayed as
+  // a reference estimate and will later be replaced by an energy-use model.
+  const pts=[
+    [7.20,100],[7.10,90],[7.00,75],[6.90,60],
+    [6.75,40],[6.55,25],[6.30,12],[6.00,5]
+  ];
+  if(!Number.isFinite(v))return null;
+  if(v>=pts[0][0])return 100;
+  if(v<=pts[pts.length-1][0])return 5;
+  for(let i=0;i<pts.length-1;i++){
+    const [v1,p1]=pts[i],[v2,p2]=pts[i+1];
+    if(v<=v1&&v>=v2){
+      return Math.round(p2+(p1-p2)*(v-v2)/(v1-v2));
+    }
+  }
+  return null;
+}
+
+function signalLabel(dbm){
+  if(!Number.isFinite(dbm)||dbm===999)return "確認不可";
+  if(dbm>=-85)return "良好";
+  if(dbm>=-100)return "普通";
+  if(dbm>=-115)return "弱い";
+  return "非常に弱い";
+}
+
+function applyClockStatus(d){
+  state.timeSynced=d.synced==="1";
+  state.browserSyncRequired=d.browser_sync_required==="1";
+  const time=(d.time&&d.time!=="INVALID")?d.time.replace("T"," "):"未同期";
+  if(state.timeSynced){
+    const src=d.source==="LTE"?"LTEネットワーク":"この端末";
+    setCard("clockValue","clockDetail","同期済み",`${src} / ${time}`,"ok");
+    $("clockNotice").className="notice ok";
+    $("clockNotice").textContent=`時刻を${src}から同期しました。`;
+  }else if(state.bootDone){
+    setCard("clockValue","clockDetail","同期が必要","「この端末の時刻で同期」を押してください","warn");
+    $("clockNotice").className="notice warn";
+    $("clockNotice").textContent="LTEから時刻を取得できませんでした。この端末の時刻で同期してください。";
+  }
+  updateWorkflow();
+}
+
+function updateWorkflow(){
+  $("step1").className="step "+(state.bootDone?(state.hardwareReady?"done":"warn"):(state.connected?"active":""));
+  $("step2").className="step "+(state.timeSynced?"done":(state.bootDone?"active":""));
+  $("step3").className="step "+(state.presetSaved?"done":(state.timeSynced?"active":""));
+  $("step4").className="step "+(state.locationSaved?"done":(state.presetSaved?"active":""));
+  $("step5").className="step "+(state.loggerRunning?"done":(canStart()?"active":""));
+
+  const reqs=[["reqHw",state.bootDone&&state.hardwareReady],["reqClock",state.timeSynced],["reqPreset",state.presetSaved],["reqLocation",state.locationSaved]];
+  for(const [id,ok] of reqs)$(id).className="req"+(ok?" ok":"");
+
+  const setupUnlocked=state.connected&&state.bootDone&&!state.bootInProgress;
+  $("startBtn").disabled=!canStart()||state.loggerRunning||state.startInProgress;
+  $("getLocationBtn").disabled=!setupUnlocked;
+  const locationKey=currentLocationKey();
+  $("saveLocationBtn").disabled=!setupUnlocked||state.locationSaving||!locationKey||locationKey===lastSavedLocationKey;
+  $("saveLocationBtn").textContent=state.locationSaving?"保存中…":"この位置を登録";
+  $("syncBrowserBtn").disabled=!setupUnlocked||state.timeSynced||!state.browserSyncRequired;
+  $("readClockBtn").disabled=!setupUnlocked;
+
+  for(const b of document.querySelectorAll(".preset"))b.disabled=!setupUnlocked;
+  for(const id of ["latInput","lonInput","accInput"])$(id).disabled=!setupUnlocked||state.locationSaving;
+  for(const b of document.querySelectorAll(".nudge button"))b.disabled=!setupUnlocked||state.locationSaving;
+
+  if(state.loggerRunning){
+    $("startMessage").textContent="定刻計測を開始しました。Bluetoothは省電力のため停止します。";
+    $("startBtn").textContent="計測開始済み";
+  }else if(state.startInProgress){
+    $("startMessage").textContent="初回計測とテスト送信を実行しています…";
+    $("startBtn").textContent="開始処理中…";
+  }else if(canStart()){
+    $("startMessage").textContent="準備が完了しました。テスト送信後、次の定刻から計測します。";
+    $("startBtn").textContent="テスト送信して計測開始";
+  }else{
+    $("startMessage").textContent="必要な設定が完了すると開始できます。";
+    $("startBtn").textContent="テスト送信して計測開始";
+  }
+
+  $("connectBtn").disabled=state.loggerRunning;
+  $("restartBtn").disabled=!state.connected||state.loggerRunning||state.restartInProgress;
+  $("restartBtn").textContent=state.restartInProgress?"再起動中…":"ロガーを再起動";
+  updateLoggerQr();
+}
+
+function updateLoggerQr(){
+  if(!loggerQr)return;
+  const panel=$("loggerQrPanel");
+  panel.classList.remove("hidden");
+  $("loggerQrId").textContent=`ロガーID: ${loggerQr.loggerId}`;
+  $("loggerQrBle").textContent=`Bluetooth: ${loggerQr.bleName}`;
+  $("loggerQrTitle").textContent=`QRに対応する「${loggerQr.loggerId}」だけを検索します。`;
+  const status=$("loggerQrStatus");
+  if(!state.connected){
+    status.className="notice";
+    status.textContent="「このロガーに接続」を押してください。初回のみブラウザのBluetooth確認画面が表示されます。";
+  }else if(!state.qrLoggerVerified){
+    status.className="notice";
+    status.textContent="接続先のロガーIDを確認しています…";
+  }else{
+    status.className="notice ok";
+    status.textContent=`${loggerQr.loggerId}への接続を確認しました。続けて初期設定できます。`;
+  }
+}
+
+function canStart(){
+  return state.connected&&state.bootDone&&state.hardwareReady&&state.timeSynced&&state.presetSaved&&state.locationSaved;
+}
+
+function setConnected(v){
+  state.connected=v;
+  if(!v&&state.loggerRunning){
+    $("connBadge").textContent="計測中（Bluetooth停止）";
+    $("connBadge").className="badge ok";
+  }else{
+    $("connBadge").textContent=v?"接続済み":"未接続";
+    $("connBadge").className="badge"+(v?" ok":"");
+  }
+  $("connectBtn").textContent=v?"再接続":(loggerQr?"このロガーに接続":"ロガーに接続");
+  updateWorkflow();
+}
+
+function commandCompleted(cmd,line,type,d){
+  if(type==="ERROR")return true;
+  if(cmd==="HELLO")return type==="HELLO";
+  if(cmd==="BOOTCHECK")return type==="BOOT"&&line.startsWith("BOOT|END");
+  if(cmd==="REBOOT")return type==="SYSTEM"&&d.restarting==="1";
+  if(cmd.startsWith("SETTIME="))return type==="CLOCK_SET";
+  if(cmd.startsWith("SETCFG="))return type==="CONFIG";
+  if(cmd.startsWith("SETLOC="))return type==="LOCATION";
+  if(cmd==="START")return type==="LOGGER";
+  if(cmd==="CLOCK")return type==="CLOCK";
+  if(cmd==="SENDPENDING")return type==="SEND_PENDING"&&d.remaining!==undefined;
+  if(cmd==="STATUS")return type==="CLOCK";
+  return true;
+}
+
+function enqueueCommand(cmd,timeoutMs=150000){
+  return new Promise((resolve,reject)=>{
+    commandQueue.push({cmd,timeoutMs,resolve,reject});
+    processCommandQueue();
+  });
+}
+
+async function processCommandQueue(){
+  if(commandWorkerRunning)return;
+  commandWorkerRunning=true;
+  while(commandQueue.length){
+    const item=commandQueue.shift();
+    if(!rxChar||!state.connected){
+      item.reject(new Error("Bluetooth未接続"));
+      continue;
+    }
+    log("→ "+item.cmd);
+    let timer;
+    const ack=new Promise((resolve,reject)=>{
+      timer=setTimeout(()=>reject(new Error(`${item.cmd} の応答待ちがタイムアウトしました`)),item.timeoutMs);
+      activeCommand={cmd:item.cmd,resolve,reject};
+    });
+    try{
+      const data=new TextEncoder().encode(item.cmd+"\n");
+      for(let i=0;i<data.length;i+=16){
+        await rxChar.writeValue(data.slice(i,Math.min(i+16,data.length)));
+      }
+      const response=await ack;
+      item.resolve(response);
+    }catch(e){
+      log("送信エラー: "+e.message);
+      item.reject(e);
+    }finally{
+      clearTimeout(timer);
+      activeCommand=null;
+    }
+  }
+  commandWorkerRunning=false;
+}
+
+function cancelCommandQueue(reason){
+  const error=new Error(reason);
+  if(activeCommand)activeCommand.reject(error);
+  for(const item of commandQueue)item.reject(error);
+  commandQueue=[];
+}
+
+function onLine(line){
+  if(!line)return;
+  log(line);
+  const {type,d}=parseLine(line);
+
+  if(activeCommand&&commandCompleted(activeCommand.cmd,line,type,d)){
+    activeCommand.resolve(line);
+  }
+
+  if(type==="BOOT"&&line.startsWith("BOOT|BEGIN")){
+    state.bootInProgress=true;
+    state.bootDone=false;
+    state.sensorDevices=[];
+    $("autoCheckNote").className="notice";
+    $("autoCheckNote").textContent="ロガーを確認しています…";
+    updateWorkflow();
+  }
+
+  if(type==="CHECK"){
+    setCheckStep(d.name,d.state);
+  }
+
+  if(type==="BATTERY"){
+    const v=Number(d.voltage);
+    const pct=Number.isFinite(Number(d.percent_est))?Number(d.percent_est):approxBatteryPercent(v);
+    state.batteryOk=d.ok==="1"&&d.state!=="CRITICAL";
+    const kind=d.state==="OK"?"ok":d.state==="WARNING"?"warn":"ng";
+    setCard("batteryValue","batteryDetail",Number.isFinite(v)?`${v.toFixed(2)} V`:"確認失敗",pct!==null?`残量試算 約${pct}%（参考値）`:"残量試算なし",kind);
+    updateWorkflow();
+  }
+
+  if(type==="MUX"){
+    state.muxOk=d.ok==="1";
+    if(state.muxOk){
+      setCard("sensorValue","sensorDetail","接続口 正常","センサーモジュールを確認しています","ok");
+    }else{
+      setCard("sensorValue","sensorDetail","MUX 未検出","TCA9548A 0x70～0x77を確認してください","ng");
+    }
+    updateWorkflow();
+  }
+
+  if(type==="PORT"){
+    const port=Number(d.port)-1;
+    if(port>=0&&port<8)state.sensorPorts[port]={port:port+1,state:d.state,name:d.state==="EMPTY"?"未接続":"確認中"};
+  }
+
+  if(type==="MODULE"){
+    const port=Number(d.port)-1;
+    if(port>=0&&port<8)state.sensorPorts[port]={port:port+1,state:d.state,name:d.name||"センサーモジュール",type:d.type||""};
+    const connected=state.sensorPorts.filter(item=>item&&item.state!=="EMPTY");
+    const detail=connected.map(item=>`ポート${item.port} ${item.name} ${item.state==="SUPPORTED_MODULE"?"正常":item.state==="PARTIAL_MODULE"?"一部確認":"要確認"}`).join(" / ");
+    setCard("sensorValue","sensorDetail",`${connected.length}台 接続`,detail,"ok");
+  }
+
+  if(type==="SENSORS"&&d.state==="NO_DRIVERS"&&state.muxOk){
+    setCard("sensorValue","sensorDetail","MUX 正常","センサードライバは次の実装で追加します","ok");
+  }
+
+  if(type==="SENSORS"&&d.state&&d.state!=="NO_DRIVERS"){
+    const detected=Number(d.detected_modules||d.detected||0),failed=Number(d.probe_errors||0);
+    if(d.state==="READY"){
+      const connected=state.sensorPorts.filter(item=>item&&item.state!=="EMPTY");
+      const names=connected.map(item=>`ポート${item.port} ${item.name} ${item.state==="SUPPORTED_MODULE"?"正常":item.state==="PARTIAL_MODULE"?"一部確認":"要確認"}`).join(" / ");
+      setCard("sensorValue","sensorDetail",`${detected}台 接続`,names||"接続センサーはありません","ok");
+    }else if(d.state==="EMPTY"){
+      setCard("sensorValue","sensorDetail","センサー未接続","設定はこのまま続行できます","warn");
+    }else if(d.state==="PARTIAL"){
+      const value=detected>0?`${detected}台 接続`:"センサー未接続";
+      const connected=state.sensorPorts.filter(item=>item&&item.state!=="EMPTY");
+      const names=connected.map(item=>`ポート${item.port} ${item.name} ${item.state==="SUPPORTED_MODULE"?"正常":item.state==="PARTIAL_MODULE"?"一部確認":"要確認"}`).join(" / ");
+      const detail=`${names}${names?" / ":""}${failed}ポートで確認が必要ですが、設定は続行できます。`;
+      setCard("sensorValue","sensorDetail",value,detail,"warn");
+    }else if(d.state==="MUX_NOT_FOUND"){
+      setCard("sensorValue","sensorDetail","MUX 未検出","配線と電源を確認してください","ng");
+    }
+  }
+
+  if(type==="STORAGE"){
+    state.storageOk=d.ok==="1";
+    state.pending=Number(d.pending||0);
+    if(d.running==="1"){
+      state.loggerRunning=true;
+      setCard("loggerValue","loggerDetail","計測開始済み","保存済み設定で稼働状態です","ok");
+    }
+    if(state.storageOk){
+      setCard("storageValue","storageDetail",state.pending>0?`${state.pending}件あり`:"正常",state.pending>0?"未送信データがあります":"FeRAM正常・未送信データなし",state.pending>0?"warn":"ok");
+    }else{
+      setCard("storageValue","storageDetail","エラー","FeRAMを確認してください","ng");
+    }
+    updateWorkflow();
+  }
+
+  if(type==="LTE"&&d.state){
+    const dbm=Number(d.rssi_dbm);
+    if(d.state==="ONLINE"){
+      setCard("lteValue","lteDetail","通信OK",`${signalLabel(dbm)} ${Number.isFinite(dbm)&&dbm!==999?dbm+" dBm":""} / ${d.operator||""}`,"ok");
+    }else if(d.state==="ATTACHED"){
+      setCard("lteValue","lteDetail","LTE接続",`データ疎通未確認 / ${signalLabel(dbm)}`,"warn");
+    }else if(d.state==="OFFLINE"){
+      setCard("lteValue","lteDetail","圏外 / 未接続","LTEなしでも計測開始できます","warn");
+    }
+  }
+
+  if(type==="SETTINGS"){
+    if(d.schedule_set==="1"){
+      const m=Number(d.measure_sec), tx=Number(d.send_sec);
+      const preset=Number(d.preset_id||0);
+      for(const b of document.querySelectorAll(".preset")){
+        const match=(preset>0&&Number(b.dataset.preset)===preset)||(Number(b.dataset.measure)===m&&Number(b.dataset.send)===tx);
+        b.classList.toggle("selected",match);
+      }
+      state.presetSaved=true;
+      $("presetNotice").className="notice ok";
+      $("presetNotice").textContent="保存済みの計測設定を読み込みました。";
+    }
+    if(d.location_set==="1"){
+      const lat=Number(d.lat),lon=Number(d.lon),acc=Number(d.accuracy_m||0);
+      if(Number.isFinite(lat)&&Number.isFinite(lon)){
+        $("latInput").value=lat.toFixed(6);
+        $("lonInput").value=lon.toFixed(6);
+        $("accInput").value=(Number.isFinite(acc)?acc:0).toFixed(1);
+        updateMarkerFromInputs(true);
+        state.locationSaved=true;
+        lastSavedLocationKey=locationKeyFromValues(lat,lon,acc);
+        $("locationState").textContent="登録済み";
+        $("locationState").className="badge ok";
+      }
+    }
+    updateWorkflow();
+  }
+
+  if(type==="CLOCK"){
+    pendingClockStatus=d;
+    if(state.bootDone)applyClockStatus(d);
+  }
+
+  if(type==="CLOCK_SET"&&d.ok==="1"){
+    state.timeSynced=true;
+    state.browserSyncRequired=false;
+    updateWorkflow();
+  }
+
+  if(type==="CONFIG"){
+    state.presetSaved=d.ok==="1";
+    $("presetNotice").className="notice"+(state.presetSaved?" ok":" warn");
+    $("presetNotice").textContent=state.presetSaved?"計測設定をロガーに保存しました。":"計測設定を保存できませんでした。";
+    updateWorkflow();
+  }
+
+  if(type==="LOCATION"){
+    state.locationSaving=false;
+    const savedKey=pendingLocationKey||locationKeyFromValues(Number(d.lat),Number(d.lon),Number(d.accuracy_m||0));
+    if(d.ok==="1"){
+      lastSavedLocationKey=savedKey;
+    }
+    state.locationSaved=d.ok==="1"&&currentLocationKey()===savedKey;
+    pendingLocationKey="";
+    $("locationState").textContent=state.locationSaved?"登録済み":"未登録";
+    $("locationState").className="badge"+(state.locationSaved?" ok":"");
+    updateWorkflow();
+  }
+
+  if(type==="BOOT"&&line.startsWith("BOOT|END")){
+    state.bootInProgress=false;
+    state.bootDone=true;
+    state.hardwareReady=d.hardware_ok==="1";
+    state.timeSynced=d.clock_synced==="1";
+    state.browserSyncRequired=d.browser_sync_required==="1";
+    $("autoCheckNote").className="notice "+(state.hardwareReady?"ok":"warn");
+    const noSensors=Number(d.sensors_required||0)===0&&!state.sensorPorts.some(item=>item&&item.state!=="EMPTY");
+    $("autoCheckNote").textContent=state.hardwareReady?(noSensors?"自動点検が完了しました。センサー未接続でも設定を続行できます。":"自動点検が完了しました。"):"自動点検で確認が必要な項目があります。";
+    if(pendingClockStatus)applyClockStatus(pendingClockStatus);
+    if(state.pending>0&&!pendingModalShown){
+      pendingModalShown=true;
+      $("pendingCountText").textContent=`${state.pending}件`;
+      $("pendingModal").classList.add("show");
+    }
+    updateWorkflow();
+  }
+
+  if(type==="SEND_PENDING"){
+    if(d.remaining!==undefined){
+      state.pending=Number(d.remaining||0);
+      setCard("storageValue","storageDetail",state.pending>0?`${state.pending}件あり`:"正常",state.pending>0?"未送信データが残っています":"未送信データなし",state.pending>0?"warn":"ok");
+    }
+  }
+
+  if(type==="SYSTEM"&&d.restarting==="1"){
+    state.restartInProgress=true;
+    state.expectedRestartDisconnect=true;
+    $("autoCheckNote").className="notice";
+    $("autoCheckNote").textContent="ロガーを再起動しています。数秒後にページを更新します。";
+    updateWorkflow();
+    if(restartReloadTimer)clearTimeout(restartReloadTimer);
+    restartReloadTimer=setTimeout(()=>window.location.reload(),4000);
+  }
+
+  if(type==="START"&&d.phase){
+    state.startInProgress=true;
+    const messages={
+      VALIDATE:"設定を確認しています…",
+      MEASURE:"初回のセンサー計測中…",
+      POWER_SETTLE:"電源を安定させています…",
+      LTE_TEST:"LTE通信を確認しています…",
+      TEST_SEND:"テストデータを送信しています…"
+    };
+    setCard("loggerValue","loggerDetail","開始処理中",messages[d.phase]||d.phase,"warn");
+    updateWorkflow();
+  }
+
+  if(type==="INITIAL_SEND"){
+    if(d.ok==="1"){
+      state.initialSend="SUCCESS";
+      setCard("loggerValue","loggerDetail","テスト送信成功",`HTTP ${d.http||"-"} / RSSI ${d.rssi_dbm||"-"} dBm`,"ok");
+    }else if(d.queued==="1"){
+      state.initialSend="QUEUED";
+      setCard("loggerValue","loggerDetail","データを保存しました","送信未完了のため次回送信時に再送します","warn");
+    }else{
+      state.initialSend="FAILED";
+      setCard("loggerValue","loggerDetail","テスト送信失敗",d.reason||"設定を確認してください","ng");
+    }
+  }
+
+  if(type==="SCHEDULE"){
+    state.nextMeasure=(d.next_measure||"").replace("T"," ");
+    state.nextSend=(d.next_send||"").replace("T"," ");
+    setCard("scheduleValue","scheduleDetail",state.nextMeasure?state.nextMeasure.slice(11,16):"設定済み",`次回送信 ${state.nextSend||"-"}`,"ok");
+  }
+
+  if(type==="BLE"&&d.closing==="1"){
+    state.expectedRuntimeDisconnect=true;
+    setCard("loggerValue","loggerDetail","省電力モードへ移行","Bluetooth・Grove・LTEを停止して次の定刻まで待機します","ok");
+  }
+
+  if(type==="LOGGER"){
+    if(d.ok==="1"&&d.state==="RUNNING"){
+      state.loggerRunning=true;
+      state.startInProgress=false;
+      state.expectedRuntimeDisconnect=true;
+      const initial=d.initial_send==="SUCCESS"?"初回送信成功":"初回データ保存済み";
+      setCard("loggerValue","loggerDetail","計測開始",`${initial} / 定刻待機へ移行`,"ok");
+    }else if(d.ok==="0"){
+      state.startInProgress=false;
+      const reasons={BOOTCHECK:"自動点検を完了してください",CLOCK_NOT_SYNCED:"時刻を同期してください",SCHEDULE_NOT_SET:"計測設定を選択してください",LOCATION_NOT_SET:"設置位置を登録してください",INITIAL_MEASUREMENT:"初回計測に失敗しました",INITIAL_RECORD_NOT_SAVED:"内部データを保存できません",SCHEDULER:"計測時刻を設定できません"};
+      setCard("loggerValue","loggerDetail","開始できません",reasons[d.reason]||d.reason||"設定を確認してください","ng");
+    }
+    updateWorkflow();
+  }
+}
+
+function onNotify(e){
+  lineBuffer+=new TextDecoder().decode(e.target.value).replace(/\r/g,"");
+  let i;
+  while((i=lineBuffer.indexOf("\n"))>=0){
+    const line=lineBuffer.slice(0,i).trim();
+    lineBuffer=lineBuffer.slice(i+1);
+    onLine(line);
+  }
+}
+
+async function connectGattWithRetry(dev){
+  let lastErr=null;
+  for(let i=0;i<2;i++){
+    try{
+      if(dev.gatt.connected)dev.gatt.disconnect();
+      await new Promise(r=>setTimeout(r,i?500:80));
+      return await dev.gatt.connect();
+    }catch(e){lastErr=e;await new Promise(r=>setTimeout(r,600));}
+  }
+  throw lastErr;
+}
+
+$("connectBtn").onclick=async()=>{
+  try{
+    const filters=loggerQr?[{name:loggerQr.bleName}]:[{namePrefix:"PlantVital-"}];
+    device=await navigator.bluetooth.requestDevice({filters,optionalServices:[SERVICE]});
+    device.addEventListener("gattserverdisconnected",()=>{
+      rxChar=null;
+      cancelCommandQueue("Bluetoothが切断されました");
+      setConnected(false);
+      if(state.expectedRestartDisconnect){
+        state.expectedRestartDisconnect=false;
+        state.restartInProgress=false;
+        log("再起動のためBluetoothが切断されました。ページを自動更新します。");
+        updateWorkflow();
+      }else if(state.expectedRuntimeDisconnect||state.loggerRunning){
+        log("計測開始に伴いBluetoothを停止しました。ロガーは定刻待機中です。");
+      }else{
+        log("Bluetooth切断");
+      }
+    });
+    const server=await connectGattWithRetry(device);
+    const service=await server.getPrimaryService(SERVICE);
+    rxChar=await service.getCharacteristic(RX);
+    const tx=await service.getCharacteristic(TX);
+    await tx.startNotifications();
+    tx.addEventListener("characteristicvaluechanged",onNotify);
+    if(!state.loggerRunning)state.expectedRuntimeDisconnect=false;
+    state.expectedRestartDisconnect=false;
+    state.restartInProgress=false;
+    state.bootInProgress=false;
+    state.bootDone=false;
+    state.hardwareReady=false;
+    state.timeSynced=false;
+    state.browserSyncRequired=false;
+    state.qrLoggerVerified=false;
+    state.sensorDevices=[];
+    state.sensorPorts=Array(8).fill(null);
+    pendingClockStatus=null;
+    pendingModalShown=false;
+    setConnected(true);
+    log("接続: "+device.name);
+    const helloLine=await enqueueCommand("HELLO",10000);
+    if(loggerQr){
+      const hello=parseLine(helloLine||"");
+      if(hello.type!=="HELLO"||hello.d.device_id!==loggerQr.loggerId){
+        const actual=hello.d.device_id||"不明";
+        if(device&&device.gatt.connected)device.gatt.disconnect();
+        throw new Error(`QRのロガーIDと一致しません（接続先: ${actual}）`);
+      }
+      state.qrLoggerVerified=true;
+      updateWorkflow();
+    }
+    state.bootInProgress=true;
+    updateWorkflow();
+    await enqueueCommand("BOOTCHECK",180000);
+  }catch(e){
+    setConnected(false);
+    log("接続エラー: "+e.message);
+  }
+};
+
+if(loggerQr){
+  $("loggerQrPanel").classList.remove("hidden");
+  $("connectBtn").textContent="このロガーに接続";
+  updateLoggerQr();
+}
+
+$("restartBtn").onclick=async()=>{
+  if(!state.connected||state.restartInProgress)return;
+  if(!window.confirm("ロガーを再起動します。数秒間Bluetoothが切断されます。よろしいですか？"))return;
+  state.restartInProgress=true;
+  state.expectedRestartDisconnect=true;
+  updateWorkflow();
+  try{
+    await enqueueCommand("REBOOT",10000);
+  }catch(e){
+    // A disconnect immediately after the acknowledgement is normal.
+    if(state.connected){
+      state.expectedRestartDisconnect=false;
+      state.restartInProgress=false;
+      log("再起動コマンドの送信に失敗しました: "+e.message);
+      updateWorkflow();
+    }
+  }
+};
+
+function browserTimePayload(){
+  const d=new Date();
+  return [d.getFullYear(),d.getMonth()+1,d.getDate(),d.getHours(),d.getMinutes(),d.getSeconds(),d.getDay()].join(",");
+}
+$("syncBrowserBtn").onclick=()=>enqueueCommand("SETTIME="+browserTimePayload(),15000).catch(()=>{});
+$("readClockBtn").onclick=()=>enqueueCommand("CLOCK",15000).catch(()=>{});
+
+for(const btn of document.querySelectorAll(".preset")){
+  btn.onclick=()=>{
+    for(const b of document.querySelectorAll(".preset"))b.classList.remove("selected");
+    btn.classList.add("selected");
+    state.presetSaved=false;
+    updateWorkflow();
+    enqueueCommand(`SETCFG=${btn.dataset.preset},${btn.dataset.measure},${btn.dataset.send}`,15000).catch(()=>{});
+  };
+}
+
+function currentLatLon(){
+  const latText=$("latInput").value.trim(),lonText=$("lonInput").value.trim(),accText=$("accInput").value.trim();
+  return {lat:latText===""?NaN:Number(latText),lon:lonText===""?NaN:Number(lonText),acc:accText===""?0:Number(accText)};
+}
+function locationKeyFromValues(lat,lon,acc){
+  if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat<-90||lat>90||lon<-180||lon>180)return "";
+  return `${lat.toFixed(6)},${lon.toFixed(6)},${(Number.isFinite(acc)?acc:0).toFixed(1)}`;
+}
+function currentLocationKey(){
+  const {lat,lon,acc}=currentLatLon();
+  return locationKeyFromValues(lat,lon,acc);
+}
+function markLocationDirty(){
+  state.locationSaved=false;
+  $("locationState").textContent="未登録";
+  $("locationState").className="badge";
+  updateWorkflow();
+}
+function updateMarkerFromInputs(center=false){
+  const {lat,lon}=currentLatLon();
+  if(!Number.isFinite(lat)||!Number.isFinite(lon))return;
+  ensureMap(lat,lon);
+  if(marker)marker.setLatLng([lat,lon]);
+  if(center&&map)map.setView([lat,lon],18);
+}
+function ensureMap(lat,lon){
+  if(typeof L==="undefined")return;
+  if(!map){
+    map=L.map("map").setView([lat,lon],17);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:20,attribution:"&copy; OpenStreetMap"}).addTo(map);
+    marker=L.marker([lat,lon],{draggable:true}).addTo(map);
+    marker.on("dragend",()=>{
+      const p=marker.getLatLng();
+      $("latInput").value=p.lat.toFixed(6);
+      $("lonInput").value=p.lng.toFixed(6);
+      markLocationDirty();
+    });
+  }else if(!marker){
+    marker=L.marker([lat,lon],{draggable:true}).addTo(map);
+  }
+}
+
+$("getLocationBtn").onclick=()=>{
+  if(!navigator.geolocation){log("位置情報APIに対応していません");return;}
+  $("getLocationBtn").disabled=true;
+  $("getLocationBtn").textContent="位置を取得中…";
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const {latitude,longitude,accuracy}=pos.coords;
+    $("latInput").value=latitude.toFixed(6);
+    $("lonInput").value=longitude.toFixed(6);
+    $("accInput").value=Number(accuracy||0).toFixed(1);
+    updateMarkerFromInputs(true);
+    markLocationDirty();
+    $("getLocationBtn").textContent="現在位置を再取得";
+    updateWorkflow();
+  },err=>{
+    log("位置取得エラー: "+err.message);
+    $("getLocationBtn").textContent="現在位置を取得";
+    updateWorkflow();
+  },{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
+};
+
+for(const id of ["latInput","lonInput","accInput"]){
+  $(id).addEventListener("input",()=>{markLocationDirty();updateMarkerFromInputs(false);});
+}
+for(const b of document.querySelectorAll(".nudge button")){
+  b.onclick=()=>{
+    let {lat,lon}=currentLatLon();
+    if(!Number.isFinite(lat)||!Number.isFinite(lon))return;
+    lat+=Number(b.dataset.dlat);lon+=Number(b.dataset.dlon);
+    $("latInput").value=lat.toFixed(6);$("lonInput").value=lon.toFixed(6);
+    updateMarkerFromInputs(true);markLocationDirty();
+  };
+}
+
+$("saveLocationBtn").onclick=()=>{
+  const {lat,lon,acc}=currentLatLon();
+  if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat<-90||lat>90||lon<-180||lon>180){
+    log("位置情報が正しくありません");return;
+  }
+  const key=locationKeyFromValues(lat,lon,acc);
+  if(!key||key===lastSavedLocationKey)return;
+  state.locationSaving=true;
+  pendingLocationKey=key;
+  updateWorkflow();
+  enqueueCommand(`SETLOC=${key}`,15000).catch(()=>{
+    state.locationSaving=false;
+    pendingLocationKey="";
+    updateWorkflow();
+  });
+};
+
+$("startBtn").onclick=()=>{
+  if(!canStart()||state.startInProgress)return;
+  state.startInProgress=true;
+  updateWorkflow();
+  enqueueCommand("START",180000).catch(()=>{
+    state.startInProgress=false;
+    updateWorkflow();
+  });
+};
+
+$("pendingLaterBtn").onclick=()=>$("pendingModal").classList.remove("show");
+$("pendingSendBtn").onclick=()=>{
+  $("pendingModal").classList.remove("show");
+  enqueueCommand("SENDPENDING",180000).catch(()=>{});
+};
+
+$("copyLogBtn").onclick=async()=>{try{await navigator.clipboard.writeText($("log").textContent)}catch(e){log("コピーできませんでした")}};
+$("clearLogBtn").onclick=()=>{$("log").textContent=""};
+
+// A neutral initial map location keeps the UI usable before geolocation.
+ensureMap(34.7,135.5);
+updateWorkflow();
+</script>
+</body>
+</html>
