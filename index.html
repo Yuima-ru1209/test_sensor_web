@@ -38,6 +38,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .start-panel{text-align:center;padding:26px}.start-panel .primary{font-size:18px;min-width:250px;min-height:56px}.requirements{margin:15px auto 0;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}.req{font-size:12px;padding:6px 10px;border-radius:999px;background:#edf0ee;color:#69736d}.req.ok{background:var(--green2);color:var(--green)}
 details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-content:flex-end;gap:8px;margin:10px 0}.logbar button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 10px;cursor:pointer}pre{background:#102019;color:#dceee2;border-radius:12px;padding:14px;max-height:420px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.55 Consolas,monospace}
 .modal{position:fixed;inset:0;background:rgba(10,25,16,.45);display:none;align-items:center;justify-content:center;padding:18px;z-index:9999}.modal.show{display:flex}.modal-card{width:min(480px,100%);background:#fff;border-radius:18px;padding:22px;box-shadow:0 28px 70px rgba(0,0,0,.22)}.modal-card h2{margin-bottom:8px}.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}
+.toast{position:fixed;left:50%;bottom:24px;z-index:10000;width:min(520px,calc(100% - 32px));transform:translate(-50%,24px);padding:15px 18px;border-radius:13px;background:#24352b;color:#fff;box-shadow:0 16px 40px rgba(0,0,0,.24);font-weight:700;opacity:0;pointer-events:none;transition:.2s ease}.toast.show{opacity:1;transform:translate(-50%,0)}.toast.ok{background:var(--green)}.toast.warn{background:var(--amber)}.toast.ng{background:var(--red)}
 .hidden{display:none!important}
 @media(max-width:800px){.grid{grid-template-columns:1fr 1fr}.preset-grid{grid-template-columns:1fr 1fr}.steps{grid-template-columns:1fr 1fr 1fr}.location-fields{grid-template-columns:1fr 1fr}}
 @media(max-width:520px){.grid,.preset-grid,.location-fields{grid-template-columns:1fr}.steps{grid-template-columns:1fr 1fr}.panel{padding:16px}#map{height:280px}.start-panel .primary{min-width:0;width:100%}}
@@ -168,6 +169,8 @@ details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-cont
   </div>
 </div>
 
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
 const SERVICE="6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -185,6 +188,7 @@ let commandWorkerRunning=false;
 let activeCommand=null;
 let pendingClockStatus=null;
 let restartReloadTimer=null;
+let toastTimer=null;
 let lastSavedLocationKey="";
 let pendingLocationKey="";
 
@@ -223,6 +227,7 @@ const state={
   expectedRestartDisconnect:false,
   expectedRuntimeDisconnect:false,
   qrLoggerVerified:false,
+  pendingSending:false,
   initialSend:"",
   nextMeasure:"",
   nextSend:""
@@ -231,6 +236,14 @@ const state={
 function log(text){
   $("log").textContent+=`[${new Date().toLocaleTimeString()}] ${text}\n`;
   $("log").scrollTop=$("log").scrollHeight;
+}
+
+function showToast(message,kind=""){
+  const el=$("toast");
+  el.textContent=message;
+  el.className=`toast show${kind?` ${kind}`:""}`;
+  if(toastTimer)clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.className="toast";},6000);
 }
 
 function parseLine(line){
@@ -628,9 +641,27 @@ function onLine(line){
   }
 
   if(type==="SEND_PENDING"){
+    if(d.phase==="CONNECT"){
+      state.pendingSending=true;
+      const count=Number(d.count||state.pending||0);
+      setCard("storageValue","storageDetail","送信中",`${count}件の未送信データを送信しています…`,"warn");
+      $("pendingSendBtn").disabled=true;
+      $("pendingSendBtn").textContent="送信中…";
+    }
     if(d.remaining!==undefined){
+      const sent=Number(d.sent||0);
       state.pending=Number(d.remaining||0);
-      setCard("storageValue","storageDetail",state.pending>0?`${state.pending}件あり`:"正常",state.pending>0?"未送信データが残っています":"未送信データなし",state.pending>0?"warn":"ok");
+      state.pendingSending=false;
+      $("pendingCountText").textContent=`${state.pending}件`;
+      $("pendingSendBtn").disabled=false;
+      $("pendingSendBtn").textContent="今すぐ送信";
+      if(d.ok==="1"&&state.pending===0){
+        setCard("storageValue","storageDetail","正常",`${sent}件を送信しました・未送信データなし`,"ok");
+        showToast(sent>0?`未送信データ ${sent}件の送信が完了しました。`:"未送信データはありません。","ok");
+      }else{
+        setCard("storageValue","storageDetail",`${state.pending}件あり`,`${sent}件送信・${state.pending}件が未送信のまま残っています`,"warn");
+        showToast(`送信は完了していません。${state.pending}件のデータが残っています。`,"warn");
+      }
     }
   }
 
@@ -925,8 +956,19 @@ $("startBtn").onclick=()=>{
 
 $("pendingLaterBtn").onclick=()=>$("pendingModal").classList.remove("show");
 $("pendingSendBtn").onclick=()=>{
+  if(state.pendingSending)return;
   $("pendingModal").classList.remove("show");
-  enqueueCommand("SENDPENDING",180000).catch(()=>{});
+  state.pendingSending=true;
+  $("pendingSendBtn").disabled=true;
+  $("pendingSendBtn").textContent="送信中…";
+  setCard("storageValue","storageDetail","送信準備中","LTEへ接続しています…","warn");
+  enqueueCommand("SENDPENDING",180000).catch(e=>{
+    state.pendingSending=false;
+    $("pendingSendBtn").disabled=false;
+    $("pendingSendBtn").textContent="今すぐ送信";
+    setCard("storageValue","storageDetail",`${state.pending}件あり`,`送信に失敗しました：${e.message}`,"ng");
+    showToast("未送信データを送信できませんでした。ログを確認してください。","ng");
+  });
 };
 
 $("copyLogBtn").onclick=async()=>{try{await navigator.clipboard.writeText($("log").textContent)}catch(e){log("コピーできませんでした")}};
