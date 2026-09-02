@@ -29,6 +29,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .step{border-radius:12px;border:1px solid var(--line);padding:10px;font-size:13px;text-align:center;color:var(--sub);background:#fafcfb}.step.done{background:var(--green2);border-color:#bedcc9;color:var(--green);font-weight:700}.step.active{border-color:#8fbba1;color:var(--green);font-weight:700}.step.warn{background:var(--amber2);border-color:#ead291;color:var(--amber)}
 .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.status-card{border:1px solid var(--line);border-radius:15px;padding:15px;min-height:120px}.status-card .label{font-size:13px;color:var(--sub)}.status-card .value{font-size:21px;font-weight:800;margin:8px 0 3px}.status-card .detail{font-size:12px;color:var(--sub);line-height:1.45}.state-ok{color:var(--green)}.state-warn{color:var(--amber)}.state-ng{color:var(--red)}
 .notice{padding:14px;border-radius:13px;background:#f4f7f5;border:1px solid var(--line);line-height:1.55}.notice.warn{background:var(--amber2);border-color:#e9cf86;color:#72500d}.notice.ok{background:var(--green2);border-color:#bfddc9;color:#285b3d}
+.qr-card{border:2px solid #9bc7aa;background:linear-gradient(135deg,#f3fbf5,#fff)}.qr-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.qr-tag{display:inline-flex;padding:6px 10px;border-radius:999px;background:var(--green2);color:var(--green);font-size:13px;font-weight:750}
 .preset-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.preset{border:2px solid var(--line);border-radius:14px;padding:14px;background:#fff;cursor:pointer;text-align:left}.preset.selected{border-color:var(--green);background:var(--green2)}.preset strong{display:block}.preset small{color:var(--sub)}
 .clock-row,.location-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 #map{height:330px;border-radius:14px;border:1px solid var(--line);background:#edf1ee;margin:12px 0}
@@ -63,6 +64,16 @@ details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-cont
   <div id="step4" class="step">4. 設置位置</div>
   <div id="step5" class="step">5. 計測開始</div>
 </div>
+</section>
+
+<section id="qrRegisterPanel" class="panel qr-card hidden">
+  <h2>センサーQR登録</h2>
+  <p id="qrRegisterTitle">センサー情報を読み込みました。</p>
+  <div class="qr-meta">
+    <span id="qrModuleType" class="qr-tag"></span>
+    <span id="qrModuleId" class="qr-tag"></span>
+  </div>
+  <div id="qrRegisterStatus" class="notice" style="margin-top:12px">「ロガーに接続」を押してください。</div>
 </section>
 
 <section class="panel">
@@ -176,6 +187,25 @@ let pendingClockStatus=null;
 let restartReloadTimer=null;
 let lastSavedLocationKey="";
 let pendingLocationKey="";
+
+const QR_MODULES={
+  bh1750:{label:"BH1750 照度センサー",types:["BH1750_TEST","LIGHT_POWER_TEST"]},
+  ina219:{label:"INA219 電流・電圧センサー",types:["INA219_TEST","LIGHT_POWER_TEST"]},
+  sht40:{label:"SHT40 温湿度センサー",types:["SHT40_TEST","SHT40_PROBE","ENV_PROBE"]},
+  bmp280:{label:"BMP280 気圧センサー",types:["BMP280_TEST","ENV_PROBE"]}
+};
+
+function readQrRegistration(){
+  const p=new URLSearchParams(location.search);
+  if((p.get("mode")||"").toLowerCase()!=="register")return null;
+  const module=(p.get("module")||"").trim().toLowerCase();
+  const moduleId=(p.get("module_id")||"").trim();
+  const port=Number(p.get("port")||0);
+  if(!QR_MODULES[module]||!moduleId||!/^[A-Za-z0-9_.-]{1,40}$/.test(moduleId))return null;
+  return {module,moduleId,port:port>=1&&port<=8?port:0,...QR_MODULES[module]};
+}
+
+const qrRegistration=readQrRegistration();
 
 const state={
   connected:false,
@@ -320,6 +350,35 @@ function updateWorkflow(){
   $("connectBtn").disabled=state.loggerRunning;
   $("restartBtn").disabled=!state.connected||state.loggerRunning||state.restartInProgress;
   $("restartBtn").textContent=state.restartInProgress?"再起動中…":"ロガーを再起動";
+  updateQrRegistration();
+}
+
+function updateQrRegistration(){
+  if(!qrRegistration)return;
+  const panel=$("qrRegisterPanel");
+  panel.classList.remove("hidden");
+  $("qrModuleType").textContent=qrRegistration.label;
+  $("qrModuleId").textContent=`管理ID: ${qrRegistration.moduleId}`;
+  $("qrRegisterTitle").textContent=`「${qrRegistration.moduleId}」をロガーで確認します。`;
+  const status=$("qrRegisterStatus");
+  const expected=qrRegistration.types;
+  const matches=state.sensorPorts.filter(item=>item&&expected.includes(item.type)&&(!qrRegistration.port||item.port===qrRegistration.port));
+  if(!state.connected){
+    status.className="notice";
+    status.textContent="下の「ロガーに接続」を押し、PlantVital-Loggerを選択してください。";
+  }else if(!state.bootDone){
+    status.className="notice";
+    status.textContent="接続しました。センサーを自動点検しています…";
+  }else if(matches.length===1){
+    status.className="notice ok";
+    status.textContent=`ポート${matches[0].port}の${matches[0].name}を確認しました。QRの管理IDは ${qrRegistration.moduleId} です。`;
+  }else if(matches.length>1){
+    status.className="notice warn";
+    status.textContent=`同じ種類のセンサーがポート${matches.map(x=>x.port).join("・")}にあります。仮登録では個体を特定できないため、対象だけを接続して再点検してください。`;
+  }else{
+    status.className="notice warn";
+    status.textContent=`${qrRegistration.label}が見つかりません。配線と電源を確認して再接続してください。`;
+  }
 }
 
 function canStart(){
@@ -449,7 +508,7 @@ function onLine(line){
 
   if(type==="MODULE"){
     const port=Number(d.port)-1;
-    if(port>=0&&port<8)state.sensorPorts[port]={port:port+1,state:d.state,name:d.name||"センサーモジュール"};
+    if(port>=0&&port<8)state.sensorPorts[port]={port:port+1,state:d.state,name:d.name||"センサーモジュール",type:d.type||""};
     const connected=state.sensorPorts.filter(item=>item&&item.state!=="EMPTY");
     const detail=connected.map(item=>`ポート${item.port} ${item.name} ${item.state==="SUPPORTED_MODULE"?"正常":item.state==="PARTIAL_MODULE"?"一部確認":"要確認"}`).join(" / ");
     setCard("sensorValue","sensorDetail",`${connected.length}台 接続`,detail,"ok");
@@ -720,6 +779,12 @@ $("connectBtn").onclick=async()=>{
     log("接続エラー: "+e.message);
   }
 };
+
+if(qrRegistration){
+  $("qrRegisterPanel").classList.remove("hidden");
+  $("connectBtn").textContent=`${qrRegistration.moduleId}をロガーに接続`;
+  updateQrRegistration();
+}
 
 $("restartBtn").onclick=async()=>{
   if(!state.connected||state.restartInProgress)return;
