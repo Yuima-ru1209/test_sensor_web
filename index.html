@@ -35,7 +35,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
 #map{height:330px;border-radius:14px;border:1px solid var(--line);background:#edf1ee;margin:12px 0}
 .location-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px}.field label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px}.field input{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:#fff}
 .nudge{display:grid;grid-template-columns:repeat(4,46px);gap:6px}.nudge button{border:1px solid var(--line);background:#fff;border-radius:10px;min-height:42px;cursor:pointer}
-.start-panel{text-align:center;padding:26px}.start-panel .primary{font-size:18px;min-width:250px;min-height:56px}.requirements{margin:15px auto 0;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}.req{font-size:12px;padding:6px 10px;border-radius:999px;background:#edf0ee;color:#69736d}.req.ok{background:var(--green2);color:var(--green)}
+.start-panel{text-align:center;padding:26px;transition:.2s ease}.start-panel.running{background:var(--green2);border-color:#9bc7aa}.start-panel .primary{font-size:18px;min-width:250px;min-height:56px}.start-panel.running .primary{background:var(--green);opacity:1}.requirements{margin:15px auto 0;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}.req{font-size:12px;padding:6px 10px;border-radius:999px;background:#edf0ee;color:#69736d}.req.ok{background:var(--green2);color:var(--green)}
 details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-content:flex-end;gap:8px;margin:10px 0}.logbar button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 10px;cursor:pointer}pre{background:#102019;color:#dceee2;border-radius:12px;padding:14px;max-height:420px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.55 Consolas,monospace}
 .modal{position:fixed;inset:0;background:rgba(10,25,16,.45);display:none;align-items:center;justify-content:center;padding:18px;z-index:9999}.modal.show{display:flex}.modal-card{width:min(480px,100%);background:#fff;border-radius:18px;padding:22px;box-shadow:0 28px 70px rgba(0,0,0,.22)}.modal-card h2{margin-bottom:8px}.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}
 .toast{position:fixed;left:50%;bottom:24px;z-index:10000;width:min(520px,calc(100% - 32px));transform:translate(-50%,24px);padding:15px 18px;border-radius:13px;background:#24352b;color:#fff;box-shadow:0 16px 40px rgba(0,0,0,.24);font-weight:700;opacity:0;pointer-events:none;transition:.2s ease}.toast.show{opacity:1;transform:translate(-50%,0)}.toast.ok{background:var(--green)}.toast.warn{background:var(--amber)}.toast.ng{background:var(--red)}
@@ -137,8 +137,8 @@ details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-cont
 </div>
 </section>
 
-<section class="panel start-panel">
-<h2>計測開始</h2>
+<section id="startPanel" class="panel start-panel">
+<h2 id="startPanelTitle">計測開始</h2>
 <p id="startMessage">必要な設定が完了すると、テスト送信後に定刻計測を開始できます。</p>
 <button id="startBtn" class="primary" disabled>計測を開始</button>
 <div class="requirements">
@@ -342,15 +342,27 @@ function updateWorkflow(){
   for(const b of document.querySelectorAll(".nudge button"))b.disabled=!setupUnlocked||state.locationSaving;
 
   if(state.loggerRunning){
-    $("startMessage").textContent="定刻計測を開始しました。Bluetoothは省電力のため停止します。";
-    $("startBtn").textContent="計測開始済み";
+    $("startPanel").classList.add("running");
+    $("startPanelTitle").textContent="計測中";
+    $("step5").textContent="5. 計測中";
+    $("startMessage").textContent="ロガーは定刻計測中です。Bluetoothは省電力のため停止します。";
+    $("startBtn").textContent="計測中";
   }else if(state.startInProgress){
+    $("startPanel").classList.remove("running");
+    $("startPanelTitle").textContent="計測開始処理中";
+    $("step5").textContent="5. 計測開始";
     $("startMessage").textContent="初回計測とテスト送信を実行しています…";
     $("startBtn").textContent="開始処理中…";
   }else if(canStart()){
+    $("startPanel").classList.remove("running");
+    $("startPanelTitle").textContent="計測開始";
+    $("step5").textContent="5. 計測開始";
     $("startMessage").textContent="準備が完了しました。テスト送信後、次の定刻から計測します。";
     $("startBtn").textContent="テスト送信して計測開始";
   }else{
+    $("startPanel").classList.remove("running");
+    $("startPanelTitle").textContent="計測開始";
+    $("step5").textContent="5. 計測開始";
     $("startMessage").textContent="必要な設定が完了すると開始できます。";
     $("startBtn").textContent="テスト送信して計測開始";
   }
@@ -542,7 +554,7 @@ function onLine(line){
     state.pending=Number(d.pending||0);
     if(d.running==="1"){
       state.loggerRunning=true;
-      setCard("loggerValue","loggerDetail","計測開始済み","保存済み設定で稼働状態です","ok");
+      setCard("loggerValue","loggerDetail","計測中","保存済み設定で稼働状態です","ok");
     }
     if(state.storageOk){
       setCard("storageValue","storageDetail",state.pending>0?`${state.pending}件あり`:"正常",state.pending>0?"未送信データがあります":"FeRAM正常・未送信データなし",state.pending>0?"warn":"ok");
@@ -718,7 +730,8 @@ function onLine(line){
       state.startInProgress=false;
       state.expectedRuntimeDisconnect=true;
       const initial=d.initial_send==="SUCCESS"?"初回送信成功":"初回データ保存済み";
-      setCard("loggerValue","loggerDetail","計測開始",`${initial} / 定刻待機へ移行`,"ok");
+      setCard("loggerValue","loggerDetail","計測中",`${initial} / 定刻待機へ移行`,"ok");
+      showToast("計測を開始しました。ロガーは定刻計測中です。","ok");
     }else if(d.ok==="0"){
       state.startInProgress=false;
       const reasons={BOOTCHECK:"自動点検を完了してください",CLOCK_NOT_SYNCED:"時刻を同期してください",SCHEDULE_NOT_SET:"計測設定を選択してください",LOCATION_NOT_SET:"設置位置を登録してください",INITIAL_MEASUREMENT:"初回計測に失敗しました",INITIAL_RECORD_NOT_SAVED:"内部データを保存できません",SCHEDULER:"計測時刻を設定できません"};
