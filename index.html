@@ -105,13 +105,14 @@ details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-cont
 <h2>計測設定</h2>
 <p>用途に合わせて送信頻度を選択してください。計測はすべて10分間隔です。</p>
 <div class="preset-grid">
+  <button class="preset" data-preset="5" data-measure="600" data-send="600"><strong>動作テスト</strong><small>計測 10分 / 送信 10分</small></button>
   <button class="preset" data-preset="1" data-measure="600" data-send="3600"><strong>標準</strong><small>計測 10分 / 送信 1時間</small></button>
   <button class="preset" data-preset="2" data-measure="600" data-send="21600"><strong>省通信</strong><small>計測 10分 / 送信 6時間</small></button>
   <button class="preset" data-preset="3" data-measure="600" data-send="43200"><strong>1日2回送信</strong><small>計測 10分 / 送信 12時間</small></button>
   <button class="preset" data-preset="4" data-measure="600" data-send="86400"><strong>1日1回送信</strong><small>計測 10分 / 送信 24時間</small></button>
 </div>
 <div id="lteIdlePanel" class="power-mode" hidden>
-  <strong>1時間送信時のLTE待機方式（比較用）</strong>
+  <strong>LTE待機方式（比較用）</strong>
   <label><input type="radio" name="lteIdle" value="OFF" checked> 完全電源OFF</label>
   <small>毎時再接続します。待機電流は最小ですが、接続探索が毎回発生します。</small>
   <label><input type="radio" name="lteIdle" value="PSM"> PSM</label>
@@ -347,9 +348,9 @@ function updateWorkflow(){
   $("readClockBtn").disabled=!setupUnlocked;
 
   for(const b of document.querySelectorAll(".preset"))b.disabled=!setupUnlocked;
-  const hourlySelected=!!document.querySelector('.preset.selected[data-preset="1"]');
-  $("lteIdlePanel").hidden=!hourlySelected;
-  for(const radio of document.querySelectorAll('input[name="lteIdle"]'))radio.disabled=!setupUnlocked||!hourlySelected;
+  const comparisonSelected=!!document.querySelector('.preset.selected[data-preset="1"],.preset.selected[data-preset="5"]');
+  $("lteIdlePanel").hidden=!comparisonSelected;
+  for(const radio of document.querySelectorAll('input[name="lteIdle"]'))radio.disabled=!setupUnlocked||!comparisonSelected;
   for(const id of ["latInput","lonInput","accInput"])$(id).disabled=!setupUnlocked||state.locationSaving;
   for(const b of document.querySelectorAll(".nudge button"))b.disabled=!setupUnlocked||state.locationSaving;
 
@@ -878,7 +879,7 @@ for(const btn of document.querySelectorAll(".preset")){
     for(const b of document.querySelectorAll(".preset"))b.classList.remove("selected");
     btn.classList.add("selected");
     state.presetSaved=false;
-    if(btn.dataset.preset!=="1"){
+    if(btn.dataset.preset!=="1"&&btn.dataset.preset!=="5"){
       state.lteIdleMode="OFF";
       const offRadio=document.querySelector('input[name="lteIdle"][value="OFF"]');
       if(offRadio)offRadio.checked=true;
@@ -891,12 +892,12 @@ for(const btn of document.querySelectorAll(".preset")){
 for(const radio of document.querySelectorAll('input[name="lteIdle"]')){
   radio.onchange=()=>{
     if(!radio.checked)return;
-    const btn=document.querySelector('.preset.selected[data-preset="1"]');
+    const btn=document.querySelector('.preset.selected[data-preset="1"],.preset.selected[data-preset="5"]');
     if(!btn)return;
     state.lteIdleMode=radio.value;
     state.presetSaved=false;
     updateWorkflow();
-    enqueueCommand(`SETCFG=1,${btn.dataset.measure},${btn.dataset.send},${state.lteIdleMode}`,15000).catch(()=>{});
+    enqueueCommand(`SETCFG=${btn.dataset.preset},${btn.dataset.measure},${btn.dataset.send},${state.lteIdleMode}`,15000).catch(()=>{});
   };
 }
 
