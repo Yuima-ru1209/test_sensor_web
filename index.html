@@ -25,7 +25,7 @@ p{color:var(--sub);line-height:1.6;margin:7px 0}
 .primary{background:var(--green);color:#fff}.secondary{background:#eef2ef;color:var(--ink)}.soft{background:var(--green2);color:var(--green)}.danger{background:var(--red2);color:var(--red)}
 button:disabled{opacity:.42;cursor:not-allowed}
 .connect-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:16px}
+.steps{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-top:16px}
 .step{border-radius:12px;border:1px solid var(--line);padding:10px;font-size:13px;text-align:center;color:var(--sub);background:#fafcfb}.step.done{background:var(--green2);border-color:#bedcc9;color:var(--green);font-weight:700}.step.active{border-color:#8fbba1;color:var(--green);font-weight:700}.step.warn{background:var(--amber2);border-color:#ead291;color:var(--amber)}
 .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.status-card{border:1px solid var(--line);border-radius:15px;padding:15px;min-height:120px}.status-card .label{font-size:13px;color:var(--sub)}.status-card .value{font-size:21px;font-weight:800;margin:8px 0 3px}.status-card .detail{font-size:12px;color:var(--sub);line-height:1.45}.state-ok{color:var(--green)}.state-warn{color:var(--amber)}.state-ng{color:var(--red)}
 .notice{padding:14px;border-radius:13px;background:#f4f7f5;border:1px solid var(--line);line-height:1.55}.notice.warn{background:var(--amber2);border-color:#e9cf86;color:#72500d}.notice.ok{background:var(--green2);border-color:#bfddc9;color:#285b3d}
@@ -63,7 +63,8 @@ details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-cont
   <div id="step2" class="step">2. 時刻</div>
   <div id="step3" class="step">3. 計測設定</div>
   <div id="step4" class="step">4. 設置位置</div>
-  <div id="step5" class="step">5. 計測開始</div>
+  <div id="step5" class="step">5. 計測名</div>
+  <div id="step6" class="step">6. 計測開始</div>
 </div>
 </section>
 
@@ -138,6 +139,16 @@ details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-cont
 </div>
 </section>
 
+<section class="panel">
+<h2>計測名</h2>
+<p>この設置で行う一連の計測に、分かりやすい名前を付けてください。内部のセッションIDは自動生成されます。</p>
+<div class="field">
+  <label for="sessionNameInput">計測名（UTF-8で64 bytes以内）</label>
+  <input id="sessionNameInput" type="text" autocomplete="off" placeholder="2026年9月 トマト計測">
+</div>
+<div id="sessionNotice" class="notice" style="margin-top:12px">計測名を入力してください。</div>
+</section>
+
 <section id="startPanel" class="panel start-panel">
 <h2 id="startPanelTitle">計測開始</h2>
 <p id="startMessage">必要な設定が完了すると、テスト送信後に定刻計測を開始できます。</p>
@@ -147,6 +158,7 @@ details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-cont
   <span id="reqClock" class="req">時刻</span>
   <span id="reqPreset" class="req">計測設定</span>
   <span id="reqLocation" class="req">設置位置</span>
+  <span id="reqSession" class="req">計測名</span>
 </div>
 </section>
 
@@ -192,6 +204,7 @@ let restartReloadTimer=null;
 let toastTimer=null;
 let lastSavedLocationKey="";
 let pendingLocationKey="";
+let sessionDraft=null;
 
 function readLoggerQr(){
   const p=new URLSearchParams(location.search);
@@ -221,6 +234,11 @@ const state={
   presetSaved:false,
   locationSaved:false,
   locationSaving:false,
+  sessionConfigured:false,
+  sessionActive:false,
+  sessionState:"NONE",
+  sessionId:"",
+  sessionName:"",
   pending:0,
   storageCapacity:0,
   storageFillPercent:0,
@@ -326,9 +344,10 @@ function updateWorkflow(){
   $("step2").className="step "+(state.timeSynced?"done":(state.bootDone?"active":""));
   $("step3").className="step "+(state.presetSaved?"done":(state.timeSynced?"active":""));
   $("step4").className="step "+(state.locationSaved?"done":(state.presetSaved?"active":""));
-  $("step5").className="step "+(state.loggerRunning?"done":(canStart()?"active":""));
+  $("step5").className="step "+(validSessionName().ok?"done":(state.locationSaved?"active":""));
+  $("step6").className="step "+(state.loggerRunning?"done":(canStart()?"active":""));
 
-  const reqs=[["reqHw",state.bootDone&&state.hardwareReady],["reqClock",state.timeSynced],["reqPreset",state.presetSaved],["reqLocation",state.locationSaved]];
+  const reqs=[["reqHw",state.bootDone&&state.hardwareReady],["reqClock",state.timeSynced],["reqPreset",state.presetSaved],["reqLocation",state.locationSaved],["reqSession",validSessionName().ok]];
   for(const [id,ok] of reqs)$(id).className="req"+(ok?" ok":"");
 
   const setupUnlocked=state.connected&&state.bootDone&&!state.bootInProgress;
@@ -342,30 +361,31 @@ function updateWorkflow(){
 
   for(const b of document.querySelectorAll(".preset"))b.disabled=!setupUnlocked;
   for(const id of ["latInput","lonInput","accInput"])$(id).disabled=!setupUnlocked||state.locationSaving;
+  $("sessionNameInput").disabled=!setupUnlocked||state.sessionActive||state.sessionState==="BOUND"||state.startInProgress;
   for(const b of document.querySelectorAll(".nudge button"))b.disabled=!setupUnlocked||state.locationSaving;
 
   if(state.loggerRunning){
     $("startPanel").classList.add("running");
     $("startPanelTitle").textContent="計測中";
-    $("step5").textContent="5. 計測中";
+    $("step6").textContent="6. 計測中";
     $("startMessage").textContent="ロガーは定刻計測中です。Bluetoothは省電力のため停止します。";
     $("startBtn").textContent="計測中";
   }else if(state.startInProgress){
     $("startPanel").classList.remove("running");
     $("startPanelTitle").textContent="計測開始処理中";
-    $("step5").textContent="5. 計測開始";
+    $("step6").textContent="6. 計測開始";
     $("startMessage").textContent="初回計測とテスト送信を実行しています…";
     $("startBtn").textContent="開始処理中…";
   }else if(canStart()){
     $("startPanel").classList.remove("running");
     $("startPanelTitle").textContent="計測開始";
-    $("step5").textContent="5. 計測開始";
+    $("step6").textContent="6. 計測開始";
     $("startMessage").textContent="準備が完了しました。テスト送信後、次の定刻から計測します。";
     $("startBtn").textContent="テスト送信して計測開始";
   }else{
     $("startPanel").classList.remove("running");
     $("startPanelTitle").textContent="計測開始";
-    $("step5").textContent="5. 計測開始";
+    $("step6").textContent="6. 計測開始";
     $("startMessage").textContent="必要な設定が完了すると開始できます。";
     $("startBtn").textContent="テスト送信して計測開始";
   }
@@ -397,7 +417,60 @@ function updateLoggerQr(){
 }
 
 function canStart(){
-  return state.connected&&state.bootDone&&state.hardwareReady&&state.timeSynced&&state.presetSaved&&state.locationSaved;
+  return state.connected&&state.bootDone&&state.hardwareReady&&state.timeSynced&&state.presetSaved&&state.locationSaved&&validSessionName().ok;
+}
+
+function sessionStorageKey(){
+  const loggerId=loggerQr?.loggerId||device?.name||"default";
+  return `plant-vital-session-draft:${loggerId}`;
+}
+
+function validSessionName(){
+  const name=$("sessionNameInput")?.value.trim()||"";
+  if(!name)return {ok:false,name,reason:"計測名を入力してください。"};
+  if(/[\r\n\u0000-\u001f\u007f-\u009f]/.test(name))return {ok:false,name,reason:"改行や制御文字は使用できません。"};
+  const bytes=new TextEncoder().encode(name).length;
+  if(bytes>64)return {ok:false,name,reason:`計測名が長すぎます（${bytes}/64 bytes）。`};
+  return {ok:true,name,reason:"計測名を使用できます。"};
+}
+
+function createUuidV4(){
+  if(crypto.randomUUID)return crypto.randomUUID();
+  const bytes=new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  bytes[6]=(bytes[6]&0x0f)|0x40;
+  bytes[8]=(bytes[8]&0x3f)|0x80;
+  const h=[...bytes].map(v=>v.toString(16).padStart(2,"0")).join("");
+  return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+}
+
+function loadSessionDraft(){
+  try{
+    const value=JSON.parse(localStorage.getItem(sessionStorageKey())||"null");
+    if(value&&typeof value.id==="string"&&typeof value.name==="string")sessionDraft=value;
+  }catch(_){sessionDraft=null;}
+}
+
+function saveSessionDraft(id,name){
+  sessionDraft={id,name};
+  localStorage.setItem(sessionStorageKey(),JSON.stringify(sessionDraft));
+}
+
+function clearSessionDraft(){
+  sessionDraft=null;
+  localStorage.removeItem(sessionStorageKey());
+}
+
+function updateSessionNotice(){
+  const check=validSessionName();
+  const notice=$("sessionNotice");
+  notice.className="notice"+(check.ok?" ok":" warn");
+  if(state.sessionActive){
+    notice.className="notice ok";
+    notice.textContent="現在の計測セッションです。変更するにはSTOP後、新しい計測を開始してください。";
+  }else{
+    notice.textContent=check.reason;
+  }
 }
 
 function setConnected(v){
@@ -421,6 +494,7 @@ function commandCompleted(cmd,line,type,d){
   if(cmd.startsWith("SETTIME="))return type==="CLOCK_SET";
   if(cmd.startsWith("SETCFG="))return type==="CONFIG";
   if(cmd.startsWith("SETLOC="))return type==="LOCATION";
+  if(cmd.startsWith("SETSESSION="))return type==="SESSION";
   if(cmd==="START")return type==="LOGGER";
   if(cmd==="CLOCK")return type==="CLOCK";
   if(cmd==="SENDPENDING")return type==="SEND_PENDING"&&d.remaining!==undefined;
@@ -482,6 +556,21 @@ function onLine(line){
 
   if(activeCommand&&commandCompleted(activeCommand.cmd,line,type,d)){
     activeCommand.resolve(line);
+  }
+
+  if(type==="ERROR"&&d.reason==="SESSION_ACTIVE"){
+    const labels={SETSESSION:"計測名",SETLOC:"設置位置",SETCFG:"計測設定",SETTIME:"時刻"};
+    const target=labels[d.command]||"設定";
+    setCard(
+      "loggerValue",
+      "loggerDetail",
+      "設定変更できません",
+      `計測セッション中は${target}を変更できません。STOP後に新しい計測を開始してください。`,
+      "warn"
+    );
+    const notice=$("sessionNotice");
+    notice.className="notice warn";
+    notice.textContent=`計測セッション中は${target}を変更できません。STOP → 設定変更 → 新しい計測開始の順で操作してください。`;
   }
 
   if(type==="BOOT"&&line.startsWith("BOOT|BEGIN")){
@@ -617,6 +706,27 @@ function onLine(line){
     updateWorkflow();
   }
 
+  if(type==="SESSION"){
+    if(d.configured!==undefined){
+      state.sessionConfigured=d.configured==="1";
+      state.sessionActive=d.active==="1";
+      state.sessionState=d.state||"NONE";
+      state.sessionId=d.id||"";
+      if(d.name_encoded!==undefined){
+        try{state.sessionName=decodeURIComponent(d.name_encoded);}catch(_){state.sessionName="";}
+      }
+      if(state.sessionName&&(state.sessionActive||state.sessionState==="BOUND"||!$("sessionNameInput").value)){
+        $("sessionNameInput").value=state.sessionName;
+      }
+    }else if(d.ok==="1"){
+      state.sessionConfigured=true;
+      state.sessionState=d.state||"PREPARED";
+      state.sessionId=d.id||state.sessionId;
+    }
+    updateSessionNotice();
+    updateWorkflow();
+  }
+
   if(type==="CLOCK"){
     pendingClockStatus=d;
     if(state.bootDone)applyClockStatus(d);
@@ -741,14 +851,24 @@ function onLine(line){
   if(type==="LOGGER"){
     if(d.ok==="1"&&d.state==="RUNNING"){
       state.loggerRunning=true;
+      state.sessionActive=true;
       state.startInProgress=false;
       state.expectedRuntimeDisconnect=true;
       const initial=d.initial_send==="SUCCESS"?"初回送信成功":"初回データ保存済み";
       setCard("loggerValue","loggerDetail","計測中",`${initial} / 定刻待機へ移行`,"ok");
       showToast("計測を開始しました。ロガーは定刻計測中です。","ok");
+    }else if(d.ok==="1"&&d.state==="STOPPED"){
+      state.loggerRunning=false;
+      state.sessionActive=false;
+      state.sessionConfigured=false;
+      state.sessionState="STOPPED";
+      state.sessionId="";
+      clearSessionDraft();
+      $("sessionNameInput").value="";
+      updateSessionNotice();
     }else if(d.ok==="0"){
       state.startInProgress=false;
-      const reasons={BOOTCHECK:"自動点検を完了してください",CLOCK_NOT_SYNCED:"時刻を同期してください",SCHEDULE_NOT_SET:"計測設定を選択してください",LOCATION_NOT_SET:"設置位置を登録してください",INITIAL_MEASUREMENT:"初回計測に失敗しました",INITIAL_RECORD_NOT_SAVED:"内部データを保存できません",SCHEDULER:"計測時刻を設定できません"};
+      const reasons={BOOTCHECK:"自動点検を完了してください",CLOCK_NOT_SYNCED:"時刻を同期してください",SCHEDULE_NOT_SET:"計測設定を選択してください",LOCATION_NOT_SET:"設置位置を登録してください",SESSION_NOT_SET:"計測名を登録してください",SESSION_PERSIST:"計測セッションを保存できません",INITIAL_MEASUREMENT:"初回計測に失敗しました",INITIAL_RECORD_NOT_SAVED:"内部データを保存できません",SCHEDULER:"計測時刻を設定できません"};
       setCard("loggerValue","loggerDetail","開始できません",reasons[d.reason]||d.reason||"設定を確認してください","ng");
     }
     updateWorkflow();
@@ -813,9 +933,17 @@ $("connectBtn").onclick=async()=>{
     state.qrLoggerVerified=false;
     state.sensorDevices=[];
     state.sensorPorts=Array(8).fill(null);
+    state.sessionConfigured=false;
+    state.sessionActive=false;
+    state.sessionState="NONE";
+    state.sessionId="";
+    state.sessionName="";
     pendingClockStatus=null;
     pendingModalShown=false;
     setConnected(true);
+    loadSessionDraft();
+    if(sessionDraft&&!$("sessionNameInput").value)$("sessionNameInput").value=sessionDraft.name;
+    updateSessionNotice();
     log("接続: "+device.name);
     const helloLine=await enqueueCommand("HELLO",10000);
     if(loggerQr){
@@ -971,14 +1099,58 @@ $("saveLocationBtn").onclick=()=>{
   });
 };
 
-$("startBtn").onclick=()=>{
+$("sessionNameInput").addEventListener("input",()=>{
+  updateSessionNotice();
+  updateWorkflow();
+});
+
+$("startBtn").onclick=async()=>{
   if(!canStart()||state.startInProgress)return;
   state.startInProgress=true;
   updateWorkflow();
-  enqueueCommand("START",180000).catch(()=>{
+  try{
+    const check=validSessionName();
+    if(!check.ok)throw new Error(check.reason);
+    const resumeStored=state.sessionActive||state.sessionState==="BOUND";
+    if(!resumeStored){
+      let id="";
+      if((state.sessionState==="PREPARED"||state.sessionState==="BOUND")&&state.sessionId){
+        id=state.sessionId;
+      }else if(sessionDraft?.id){
+        id=sessionDraft.id;
+      }else{
+        id=createUuidV4();
+      }
+      saveSessionDraft(id,check.name);
+      const line=await enqueueCommand(`SETSESSION=${id},${encodeURIComponent(check.name)}`,20000);
+      const ack=parseLine(line||"");
+      if(ack.type!=="SESSION"||ack.d.ok!=="1")throw new Error("計測名をロガーへ保存できませんでした");
+      state.sessionConfigured=true;
+      state.sessionId=id;
+      state.sessionName=check.name;
+      state.sessionState="PREPARED";
+
+      const locationKey=currentLocationKey();
+      const locationLine=await enqueueCommand(`SETLOC=${locationKey}`,15000);
+      const locationAck=parseLine(locationLine||"");
+      if(locationAck.type!=="LOCATION"||locationAck.d.ok!=="1")throw new Error("設置位置をロガーへ保存できませんでした");
+
+      const preset=document.querySelector(".preset.selected");
+      if(!preset)throw new Error("計測設定を選択してください");
+      const configLine=await enqueueCommand(`SETCFG=${preset.dataset.preset},${preset.dataset.measure},${preset.dataset.send}`,15000);
+      const configAck=parseLine(configLine||"");
+      if(configAck.type!=="CONFIG"||configAck.d.ok!=="1")throw new Error("計測設定をロガーへ保存できませんでした");
+    }
+    const loggerLine=await enqueueCommand("START",180000);
+    const loggerAck=parseLine(loggerLine||"");
+    if(loggerAck.type!=="LOGGER"||loggerAck.d.ok!=="1")throw new Error(loggerAck.d.reason||"計測を開始できませんでした");
+    clearSessionDraft();
+  }catch(e){
+    log("計測開始エラー: "+e.message);
+    showToast(e.message,"ng");
     state.startInProgress=false;
     updateWorkflow();
-  });
+  }
 };
 
 $("pendingLaterBtn").onclick=()=>$("pendingModal").classList.remove("show");
@@ -1003,6 +1175,9 @@ $("clearLogBtn").onclick=()=>{$("log").textContent=""};
 
 // A neutral initial map location keeps the UI usable before geolocation.
 ensureMap(34.7,135.5);
+loadSessionDraft();
+if(sessionDraft)$("sessionNameInput").value=sessionDraft.name;
+updateSessionNotice();
 updateWorkflow();
 </script>
 </body>
