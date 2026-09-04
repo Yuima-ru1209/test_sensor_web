@@ -31,7 +31,6 @@ button:disabled{opacity:.42;cursor:not-allowed}
 .notice{padding:14px;border-radius:13px;background:#f4f7f5;border:1px solid var(--line);line-height:1.55}.notice.warn{background:var(--amber2);border-color:#e9cf86;color:#72500d}.notice.ok{background:var(--green2);border-color:#bfddc9;color:#285b3d}
 .qr-card{border:2px solid #9bc7aa;background:linear-gradient(135deg,#f3fbf5,#fff)}.qr-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.qr-tag{display:inline-flex;padding:6px 10px;border-radius:999px;background:var(--green2);color:var(--green);font-size:13px;font-weight:750}
 .preset-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.preset{border:2px solid var(--line);border-radius:14px;padding:14px;background:#fff;cursor:pointer;text-align:left}.preset.selected{border-color:var(--green);background:var(--green2)}.preset strong{display:block}.preset small{color:var(--sub)}
-.power-mode{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:14px;background:#f8fbf8}.power-mode strong{display:block;margin-bottom:8px}.power-mode label{display:block;margin:8px 0;cursor:pointer}.power-mode small{display:block;margin-left:24px;color:var(--sub)}
 .clock-row,.location-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 #map{height:330px;border-radius:14px;border:1px solid var(--line);background:#edf1ee;margin:12px 0}
 .location-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px}.field label{display:block;font-size:12px;color:var(--sub);margin-bottom:5px}.field input{width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;background:#fff}
@@ -105,19 +104,12 @@ details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-cont
 <h2>計測設定</h2>
 <p>用途に合わせて送信頻度を選択してください。計測はすべて10分間隔です。</p>
 <div class="preset-grid">
-  <button class="preset" data-preset="5" data-measure="600" data-send="600"><strong>動作テスト</strong><small>計測 10分 / 送信 10分</small></button>
   <button class="preset" data-preset="1" data-measure="600" data-send="3600"><strong>標準</strong><small>計測 10分 / 送信 1時間</small></button>
   <button class="preset" data-preset="2" data-measure="600" data-send="21600"><strong>省通信</strong><small>計測 10分 / 送信 6時間</small></button>
   <button class="preset" data-preset="3" data-measure="600" data-send="43200"><strong>1日2回送信</strong><small>計測 10分 / 送信 12時間</small></button>
   <button class="preset" data-preset="4" data-measure="600" data-send="86400"><strong>1日1回送信</strong><small>計測 10分 / 送信 24時間</small></button>
 </div>
-<div id="lteIdlePanel" class="power-mode" hidden>
-  <strong>LTE待機方式（比較用）</strong>
-  <label><input type="radio" name="lteIdle" value="OFF" checked> 完全電源OFF</label>
-  <small>毎時再接続します。待機電流は最小ですが、接続探索が毎回発生します。</small>
-  <label><input type="radio" name="lteIdle" value="PSM"> PSM</label>
-  <small>通信セッションを維持して省電力待機します。失敗時は自動的に完全OFFへ戻ります。</small>
-</div>
+<div class="notice ok" style="margin-top:12px">LTEはPSM省電力待機を使用します。PSMへ移行できない場合は安全のためモデムを停止します。</div>
 <div id="presetNotice" class="notice" style="margin-top:12px">プリセットを1つ選択してください。</div>
 </section>
 
@@ -227,10 +219,11 @@ const state={
   timeSynced:false,
   browserSyncRequired:false,
   presetSaved:false,
-  lteIdleMode:"OFF",
   locationSaved:false,
   locationSaving:false,
   pending:0,
+  storageCapacity:0,
+  storageFillPercent:0,
   loggerRunning:false,
   startInProgress:false,
   restartInProgress:false,
@@ -348,9 +341,6 @@ function updateWorkflow(){
   $("readClockBtn").disabled=!setupUnlocked;
 
   for(const b of document.querySelectorAll(".preset"))b.disabled=!setupUnlocked;
-  const comparisonSelected=!!document.querySelector('.preset.selected[data-preset="1"],.preset.selected[data-preset="5"]');
-  $("lteIdlePanel").hidden=!comparisonSelected;
-  for(const radio of document.querySelectorAll('input[name="lteIdle"]'))radio.disabled=!setupUnlocked||!comparisonSelected;
   for(const id of ["latInput","lonInput","accInput"])$(id).disabled=!setupUnlocked||state.locationSaving;
   for(const b of document.querySelectorAll(".nudge button"))b.disabled=!setupUnlocked||state.locationSaving;
 
@@ -565,12 +555,23 @@ function onLine(line){
   if(type==="STORAGE"){
     state.storageOk=d.ok==="1";
     state.pending=Number(d.pending||0);
+    state.storageCapacity=Number(d.capacity||0);
+    state.storageFillPercent=Number.isFinite(Number(d.fill_percent))
+      ?Number(d.fill_percent)
+      :(state.storageCapacity>0?Math.ceil(state.pending*100/state.storageCapacity):0);
     if(d.running==="1"){
       state.loggerRunning=true;
       setCard("loggerValue","loggerDetail","計測中","保存済み設定で稼働状態です","ok");
     }
     if(state.storageOk){
-      setCard("storageValue","storageDetail",state.pending>0?`${state.pending}件あり`:"正常",state.pending>0?"未送信データがあります":"FeRAM正常・未送信データなし",state.pending>0?"warn":"ok");
+      const alert=d.alert||"OK";
+      const countText=state.pending>0?`${state.pending}件・${state.storageFillPercent}%`:"正常";
+      const detail=alert==="CRITICAL"
+        ?`FeRAM残量が少ないか、あふれを検出しました（${state.pending}/${state.storageCapacity}件）`
+        :alert==="WARNING"
+          ?`未送信データが70%を超えています（${state.pending}/${state.storageCapacity}件）`
+          :state.pending>0?"未送信データがあります":"FeRAM正常・未送信データなし";
+      setCard("storageValue","storageDetail",countText,detail,alert==="CRITICAL"?"ng":(alert==="WARNING"||state.pending>0?"warn":"ok"));
     }else{
       setCard("storageValue","storageDetail","エラー","FeRAMを確認してください","ng");
     }
@@ -597,9 +598,6 @@ function onLine(line){
         b.classList.toggle("selected",match);
       }
       state.presetSaved=true;
-      state.lteIdleMode=d.lte_idle==="PSM"?"PSM":"OFF";
-      const idleRadio=document.querySelector(`input[name="lteIdle"][value="${state.lteIdleMode}"]`);
-      if(idleRadio)idleRadio.checked=true;
       $("presetNotice").className="notice ok";
       $("presetNotice").textContent="保存済みの計測設定を読み込みました。";
     }
@@ -632,9 +630,6 @@ function onLine(line){
 
   if(type==="CONFIG"){
     state.presetSaved=d.ok==="1";
-    if(d.lte_idle)state.lteIdleMode=d.lte_idle==="PSM"?"PSM":"OFF";
-    const idleRadio=document.querySelector(`input[name="lteIdle"][value="${state.lteIdleMode}"]`);
-    if(idleRadio)idleRadio.checked=true;
     $("presetNotice").className="notice"+(state.presetSaved?" ok":" warn");
     $("presetNotice").textContent=state.presetSaved?"計測設定をロガーに保存しました。":"計測設定を保存できませんでした。";
     updateWorkflow();
@@ -879,25 +874,8 @@ for(const btn of document.querySelectorAll(".preset")){
     for(const b of document.querySelectorAll(".preset"))b.classList.remove("selected");
     btn.classList.add("selected");
     state.presetSaved=false;
-    if(btn.dataset.preset!=="1"&&btn.dataset.preset!=="5"){
-      state.lteIdleMode="OFF";
-      const offRadio=document.querySelector('input[name="lteIdle"][value="OFF"]');
-      if(offRadio)offRadio.checked=true;
-    }
     updateWorkflow();
-    enqueueCommand(`SETCFG=${btn.dataset.preset},${btn.dataset.measure},${btn.dataset.send},${state.lteIdleMode}`,15000).catch(()=>{});
-  };
-}
-
-for(const radio of document.querySelectorAll('input[name="lteIdle"]')){
-  radio.onchange=()=>{
-    if(!radio.checked)return;
-    const btn=document.querySelector('.preset.selected[data-preset="1"],.preset.selected[data-preset="5"]');
-    if(!btn)return;
-    state.lteIdleMode=radio.value;
-    state.presetSaved=false;
-    updateWorkflow();
-    enqueueCommand(`SETCFG=${btn.dataset.preset},${btn.dataset.measure},${btn.dataset.send},${state.lteIdleMode}`,15000).catch(()=>{});
+    enqueueCommand(`SETCFG=${btn.dataset.preset},${btn.dataset.measure},${btn.dataset.send}`,15000).catch(()=>{});
   };
 }
 
