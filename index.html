@@ -90,6 +90,10 @@ details summary{cursor:pointer;font-weight:700}.logbar{display:flex;justify-cont
   <div class="status-card"><div class="label">ロガー</div><div id="loggerValue" class="value">設定中</div><div id="loggerDetail" class="detail">初期設定を完了してください</div></div>
   <div class="status-card"><div class="label">次回動作</div><div id="scheduleValue" class="value">--</div><div id="scheduleDetail" class="detail">計測開始後に表示します</div></div>
 </div>
+<div id="storageRecovery" class="notice warn hidden" style="margin-top:12px">
+  旧バージョンのFeRAMデータが残っているため初期化が必要です。未送信データ・設定・センサー構成は消去されます。
+  <div style="margin-top:10px"><button id="resetStorageBtn" class="danger">FeRAMを初期化</button></div>
+</div>
 </section>
 
 <section id="clockPanel" class="panel">
@@ -242,6 +246,7 @@ const state={
   pending:0,
   storageCapacity:0,
   storageFillPercent:0,
+  storageMigrationBlocked:false,
   loggerRunning:false,
   startInProgress:false,
   restartInProgress:false,
@@ -358,6 +363,7 @@ function updateWorkflow(){
   $("saveLocationBtn").textContent=state.locationSaving?"保存中…":"この位置を登録";
   $("syncBrowserBtn").disabled=!setupUnlocked||state.timeSynced||!state.browserSyncRequired;
   $("readClockBtn").disabled=!setupUnlocked;
+  $("resetStorageBtn").disabled=!state.connected||!state.bootDone||!state.storageMigrationBlocked;
 
   for(const b of document.querySelectorAll(".preset"))b.disabled=!setupUnlocked;
   for(const id of ["latInput","lonInput","accInput"])$(id).disabled=!setupUnlocked||state.locationSaving;
@@ -495,6 +501,7 @@ function commandCompleted(cmd,line,type,d){
   if(cmd.startsWith("SETCFG="))return type==="CONFIG";
   if(cmd.startsWith("SETLOC="))return type==="LOCATION";
   if(cmd.startsWith("SETSESSION="))return type==="SESSION";
+  if(cmd==="RESETSTORAGE=ERASE_ALL")return type==="STORAGE_RESET";
   if(cmd==="START")return type==="LOGGER";
   if(cmd==="CLOCK")return type==="CLOCK";
   if(cmd==="SENDPENDING")return type==="SEND_PENDING"&&d.remaining!==undefined;
@@ -643,6 +650,8 @@ function onLine(line){
 
   if(type==="STORAGE"){
     state.storageOk=d.ok==="1";
+    state.storageMigrationBlocked=d.migration_blocked==="1";
+    $("storageRecovery").classList.toggle("hidden",!state.storageMigrationBlocked);
     state.pending=Number(d.pending||0);
     state.storageCapacity=Number(d.capacity||0);
     state.storageFillPercent=Number.isFinite(Number(d.fill_percent))
@@ -938,6 +947,8 @@ $("connectBtn").onclick=async()=>{
     state.sessionState="NONE";
     state.sessionId="";
     state.sessionName="";
+    state.storageMigrationBlocked=false;
+    $("storageRecovery").classList.add("hidden");
     pendingClockStatus=null;
     pendingModalShown=false;
     setConnected(true);
@@ -987,6 +998,24 @@ $("restartBtn").onclick=async()=>{
       log("再起動コマンドの送信に失敗しました: "+e.message);
       updateWorkflow();
     }
+  }
+};
+
+$("resetStorageBtn").onclick=async()=>{
+  if(!state.connected||!state.storageMigrationBlocked)return;
+  const message="FeRAM内の旧未送信データ、設定、センサー構成を消去します。telemetry sequence番号だけは重複防止のため維持します。実行しますか？";
+  if(!window.confirm(message))return;
+  $("resetStorageBtn").disabled=true;
+  try{
+    const line=await enqueueCommand("RESETSTORAGE=ERASE_ALL",30000);
+    const ack=parseLine(line||"");
+    if(ack.type!=="STORAGE_RESET"||ack.d.ok!=="1")throw new Error("FeRAMを初期化できませんでした");
+    showToast("FeRAMを初期化しました。ロガーを再起動します。","ok");
+    await enqueueCommand("REBOOT",10000);
+  }catch(e){
+    showToast(e.message,"ng");
+    log("FeRAM初期化エラー: "+e.message);
+    $("resetStorageBtn").disabled=false;
   }
 };
 
